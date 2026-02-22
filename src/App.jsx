@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from 'firebase/auth';
-import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, deleteDoc, updateDoc, query, where, getDocs } from 'firebase/firestore';
 import { 
   Lock, Unlock, Send, Key, MessageSquare, ShieldAlert, 
   ShieldCheck, LogOut, User, Image as ImageIcon, Loader2, 
-  Check, Users, Palette, Reply, X, Smile, Mic, Square, Play, Pause, ChevronLeft, Fingerprint
+  Check, Users, Palette, Reply, X, Smile, Mic, Square, Play, Pause, ChevronLeft, Fingerprint, Search, Plus, Trash2
 } from 'lucide-react';
 
 // --- Firebase Initialization ---
@@ -115,8 +115,6 @@ const themeStyles = {
   matrix: { name: 'Matrix', text: 'text-green-400', border: 'border-green-500/30', ring: 'focus:ring-green-400', bgLight: 'bg-green-500/10', btnGrad: 'from-green-700 to-green-500 hover:from-green-600 hover:to-green-400', sendBtn: 'from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500', msgMine: 'from-green-600/30 to-emerald-600/20 border-green-500/30 text-green-50', glow: 'shadow-[0_0_15px_rgba(34,197,94,0.2)]', title: 'text-green-500 drop-shadow-[0_0_10px_rgba(34,197,94,0.4)]' },
   synthwave: { name: 'Synthwave', text: 'text-pink-400', border: 'border-pink-500/30', ring: 'focus:ring-pink-400', bgLight: 'bg-pink-500/10', btnGrad: 'from-pink-600 to-orange-500 hover:from-pink-500 hover:to-orange-400', sendBtn: 'from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500', msgMine: 'from-pink-600/30 to-purple-600/20 border-pink-500/30 text-pink-50', glow: 'shadow-[0_0_15px_rgba(236,72,153,0.3)]', title: 'text-pink-400 drop-shadow-[0_0_10px_rgba(236,72,153,0.6)]' },
   terminal: { name: 'Terminal', text: 'text-amber-500', border: 'border-amber-500/30', ring: 'focus:ring-amber-500', bgLight: 'bg-amber-500/10', btnGrad: 'from-amber-700 to-amber-600 hover:from-amber-600 hover:to-amber-500', sendBtn: 'from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500', msgMine: 'from-amber-600/20 to-orange-600/10 border-amber-500/30 text-amber-100', glow: 'shadow-[0_0_10px_rgba(245,158,11,0.2)]', title: 'text-amber-500 drop-shadow-[0_0_10px_rgba(245,158,11,0.3)]' },
-  stealth: { name: 'Stealth', text: 'text-slate-300', border: 'border-slate-500/30', ring: 'focus:ring-slate-400', bgLight: 'bg-slate-500/20', btnGrad: 'from-slate-700 to-slate-600 hover:from-slate-600 hover:to-slate-500', sendBtn: 'from-slate-600 to-gray-600 hover:from-slate-500 hover:to-gray-500', msgMine: 'from-slate-700/50 to-gray-700/30 border-slate-500/30 text-slate-100', glow: 'shadow-[0_0_15px_rgba(148,163,184,0.1)]', title: 'text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]' },
-  oceanic: { name: 'Oceanic', text: 'text-teal-400', border: 'border-teal-500/30', ring: 'focus:ring-teal-400', bgLight: 'bg-teal-500/10', btnGrad: 'from-blue-700 to-teal-500 hover:from-blue-600 hover:to-teal-400', sendBtn: 'from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500', msgMine: 'from-teal-600/30 to-blue-600/20 border-teal-500/30 text-teal-50', glow: 'shadow-[0_0_15px_rgba(45,212,191,0.2)]', title: 'text-teal-400 drop-shadow-[0_0_10px_rgba(45,212,191,0.4)]' }
 };
 
 const REACTION_EMOJIS = [
@@ -126,7 +124,7 @@ const REACTION_EMOJIS = [
   '💪', '🧠', '🖕', '🙂', '🫦', '🥵', '🥶', '🥴', '🧊', '🩸', '🧪', '📉'
 ];
 
-// --- 1. THE AUTHENTICATION SCREEN (Anonymous ID Logic) ---
+// --- 1. THE AUTHENTICATION SCREEN ---
 const AuthScreen = ({ t }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [agentId, setAgentId] = useState('');
@@ -136,13 +134,8 @@ const AuthScreen = ({ t }) => {
 
   const handleAuth = async (e) => {
     e.preventDefault();
-    
-    // Create a safe, hidden fake email so Firebase Auth works without the user knowing
     const safeId = agentId.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (safeId.length < 3) {
-      alert("Agent ID must be at least 3 letters or numbers.");
-      return;
-    }
+    if (safeId.length < 3) return alert("Agent ID must be at least 3 letters or numbers.");
     const phantomEmail = `${safeId}@commslink.network`;
 
     setLoading(true);
@@ -154,22 +147,17 @@ const AuthScreen = ({ t }) => {
         const finalName = displayName.trim() || agentId.trim();
         await updateProfile(userCredential.user, { displayName: finalName });
         
-        // Add to public users directory for the dashboard
         await setDoc(doc(db, 'users', userCredential.user.uid), {
           uid: userCredential.user.uid,
-          agentId: agentId.trim(),
+          agentId: safeId,
           displayName: finalName,
           lastSeen: Date.now()
         });
       }
     } catch (error) { 
-      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-        alert("Access Denied: Invalid Agent ID or Password.");
-      } else if (error.code === 'auth/email-already-in-use') {
-        alert("This Agent ID is already claimed by someone else.");
-      } else {
-        alert(error.message); 
-      }
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') alert("Access Denied: Invalid Agent ID or Password.");
+      else if (error.code === 'auth/email-already-in-use') alert("This Agent ID is already claimed by someone else.");
+      else alert(error.message); 
     }
     setLoading(false);
   };
@@ -205,7 +193,6 @@ const AuthScreen = ({ t }) => {
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : isLogin ? "Initialize Link" : "Claim Agent ID"}
           </button>
         </form>
-
         <p className="text-center text-xs text-slate-500 mt-6 cursor-pointer hover:text-white" onClick={() => setIsLogin(!isLogin)}>
           {isLogin ? "Need a new identity? Register here." : "Already have an Agent ID? Login here."}
         </p>
@@ -214,8 +201,8 @@ const AuthScreen = ({ t }) => {
   );
 };
 
-// --- 2. THE CHAT INTERFACE (The Room) ---
-const ChatInterface = ({ user, roomId, otherUser, encryptionKey, goBack, t }) => {
+// --- 2. THE CHAT INTERFACE ---
+const ChatInterface = ({ user, threadId, chatData, encryptionKey, goBack, deleteChat, t }) => {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -234,8 +221,12 @@ const ChatInterface = ({ user, roomId, otherUser, encryptionKey, goBack, t }) =>
   const fileInputRef = useRef(null);
   const activeTouch = useRef({ startX: 0, timer: null, isLongPress: false });
 
+  // Find the other person's name from the chatData
+  const otherUserId = chatData.participants.find(id => id !== user.uid);
+  const chatName = chatData.participantNames[otherUserId] || 'Unknown Agent';
+
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'secure_rooms', roomId, 'messages'), async (snapshot) => {
+    const unsubscribe = onSnapshot(collection(db, 'chat_threads', threadId, 'messages'), async (snapshot) => {
       const raw = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
       const processed = await Promise.all(raw.map(async (msg) => {
         const decrypted = await decryptText(msg.text, encryptionKey);
@@ -245,7 +236,7 @@ const ChatInterface = ({ user, roomId, otherUser, encryptionKey, goBack, t }) =>
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     });
     return () => unsubscribe();
-  }, [roomId, encryptionKey]);
+  }, [threadId, encryptionKey]);
 
   const handleSendText = async (e) => {
     e.preventDefault(); if (!inputText.trim() || !user) return;
@@ -253,7 +244,9 @@ const ChatInterface = ({ user, roomId, otherUser, encryptionKey, goBack, t }) =>
     const replyId = replyingTo ? replyingTo.id : null; setReplyingTo(null);
     try {
       const enc = await encryptText(txt, encryptionKey);
-      await addDoc(collection(db, 'secure_rooms', roomId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: enc, type: 'text', timestamp: Date.now(), replyToId: replyId, reactions: {} });
+      await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: enc, type: 'text', timestamp: Date.now(), replyToId: replyId, reactions: {} });
+      // Update last message time for sorting on dashboard
+      await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
     } catch (err) { console.error(err); }
   };
 
@@ -263,7 +256,8 @@ const ChatInterface = ({ user, roomId, otherUser, encryptionKey, goBack, t }) =>
     const replyId = replyingTo ? replyingTo.id : null; setReplyingTo(null);
     try {
       const b64 = await compressImage(file); const enc = await encryptText(b64, encryptionKey);
-      await addDoc(collection(db, 'secure_rooms', roomId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: enc, type: 'image', timestamp: Date.now(), replyToId: replyId, reactions: {} });
+      await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: enc, type: 'image', timestamp: Date.now(), replyToId: replyId, reactions: {} });
+      await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
     } catch (err) { console.error(err); } finally { setIsUploading(false); }
   };
 
@@ -287,7 +281,8 @@ const ChatInterface = ({ user, roomId, otherUser, encryptionKey, goBack, t }) =>
         try {
           const base64Audio = await blobToBase64(blob);
           const encAudio = await encryptText(base64Audio, encryptionKey);
-          await addDoc(collection(db, 'secure_rooms', roomId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: encAudio, type: 'audio', timestamp: Date.now(), replyToId: replyingTo ? replyingTo.id : null, reactions: {} });
+          await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: encAudio, type: 'audio', timestamp: Date.now(), replyToId: replyingTo ? replyingTo.id : null, reactions: {} });
+          await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
           setReplyingTo(null);
         } catch (error) { alert("Failed to send: Audio clip too large."); }
         setIsUploading(false);
@@ -309,7 +304,7 @@ const ChatInterface = ({ user, roomId, otherUser, encryptionKey, goBack, t }) =>
     let newEmojiUsers = hasReacted ? emojiUsers.filter(id => id !== user.uid) : [...emojiUsers, user.uid];
     const updatedReactions = { ...currentReactions, [emoji]: newEmojiUsers };
     if (newEmojiUsers.length === 0) delete updatedReactions[emoji];
-    await updateDoc(doc(db, 'secure_rooms', roomId, 'messages', msgId), { reactions: updatedReactions });
+    await updateDoc(doc(db, 'chat_threads', threadId, 'messages', msgId), { reactions: updatedReactions });
   };
 
   return (
@@ -324,8 +319,11 @@ const ChatInterface = ({ user, roomId, otherUser, encryptionKey, goBack, t }) =>
         <div className="flex items-center gap-3">
           <button onClick={goBack} className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-white/10"><ChevronLeft className="w-6 h-6" /></button>
           <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${t.bgLight} border ${t.border} flex items-center justify-center ${t.glow}`}><User className={`w-5 h-5 ${t.text}`} /></div>
-          <div><h2 className="font-mono text-md font-bold text-slate-100">{otherUser.displayName}</h2><p className="text-[10px] text-green-400 flex items-center gap-1"><Lock className="w-3 h-3" /> E2E Encrypted</p></div>
+          <div><h2 className="font-mono text-md font-bold text-slate-100">{chatName}</h2><p className="text-[10px] text-green-400 flex items-center gap-1"><Lock className="w-3 h-3" /> E2E Encrypted</p></div>
         </div>
+        <button onClick={() => deleteChat(threadId)} className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all" title="Delete Chat Thread">
+          <Trash2 className="w-5 h-5" />
+        </button>
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6 custom-scrollbar">
@@ -404,37 +402,37 @@ const ChatInterface = ({ user, roomId, otherUser, encryptionKey, goBack, t }) =>
 };
 
 
-// --- 3. MAIN APP ROUTER ---
+// --- 3. MAIN APP ROUTER (DASHBOARD & LOCAL KEYS) ---
 export default function App() {
   const [user, setUser] = useState(null);
-  const [usersList, setUsersList] = useState([]);
-  const [activeChat, setActiveChat] = useState(null); // { id: 'room_id', otherUser: {} }
+  const [chatThreads, setChatThreads] = useState([]);
+  const [activeChat, setActiveChat] = useState(null); // { id: 'thread_id', data: {} }
   const [encryptionKey, setEncryptionKey] = useState('');
   
   const [themeMode, setThemeMode] = useState('cyberpunk');
   const t = themeStyles[themeMode];
   
   const [showKeyModal, setShowKeyModal] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState(null);
+  const [targetThread, setTargetThread] = useState(null);
   const [tempKey, setTempKey] = useState('');
+  
+  const [searchAgentId, setSearchAgentId] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
 
-  // Handle Authentication State
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => { setUser(currentUser); });
     return () => unsubscribe();
   }, []);
 
-  // Fetch all users for Dashboard
+  // Fetch active chat threads where user is a participant
   useEffect(() => {
     if (!user) return;
-    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const users = [];
-      snapshot.forEach(doc => {
-        if (doc.id !== user.uid) users.push(doc.data());
-      });
-      setUsersList(users);
+    const q = query(collection(db, 'chat_threads'), where('participants', 'array-contains', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const threads = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Sort by newest activity
+      threads.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
+      setChatThreads(threads);
     });
     return () => unsubscribe();
   }, [user]);
@@ -446,27 +444,86 @@ export default function App() {
 
   const handleLogout = () => { signOut(auth); setActiveChat(null); };
 
-  const startChatSequence = (agent) => {
-    setSelectedAgent(agent);
-    setTempKey('');
-    setShowKeyModal(true);
+  // Search for an agent and spin up a NEW thread
+  const handleSearchAndCreateChat = async (e) => {
+    e.preventDefault();
+    if (!searchAgentId.trim()) return;
+    setIsSearching(true);
+    try {
+      const q = query(collection(db, 'users'), where('agentId', '==', searchAgentId.trim().toLowerCase()));
+      const snap = await getDocs(q);
+      
+      if (snap.empty) {
+        alert("Agent ID not found in the network.");
+        setIsSearching(false);
+        return;
+      }
+
+      const targetAgent = snap.docs[0].data();
+      if (targetAgent.uid === user.uid) {
+        alert("You cannot start a chat with yourself.");
+        setIsSearching(false);
+        return;
+      }
+
+      // Create a brand new thread document
+      const newThreadRef = await addDoc(collection(db, 'chat_threads'), {
+        participants: [user.uid, targetAgent.uid],
+        participantNames: { [user.uid]: user.displayName, [targetAgent.uid]: targetAgent.displayName },
+        createdAt: Date.now(),
+        lastActivity: Date.now()
+      });
+
+      setSearchAgentId('');
+      // Open the key modal for the newly created thread
+      triggerChatEntry({ id: newThreadRef.id, participants: [user.uid, targetAgent.uid], participantNames: { [user.uid]: user.displayName, [targetAgent.uid]: targetAgent.displayName } });
+
+    } catch (err) { console.error("Search failed:", err); }
+    setIsSearching(false);
+  };
+
+  // Open a chat (checks local storage for keys first)
+  const triggerChatEntry = (thread) => {
+    const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}');
+    if (savedKeys[thread.id]) {
+      // We have the key saved locally! Skip the modal.
+      setEncryptionKey(savedKeys[thread.id]);
+      setActiveChat(thread);
+    } else {
+      // Ask for the key
+      setTargetThread(thread);
+      setTempKey('');
+      setShowKeyModal(true);
+    }
   };
 
   const confirmChatEntry = (e) => {
     e.preventDefault();
     if (!tempKey.trim()) return;
     
-    // Create consistent Room ID alphabetically based on UIDs
-    const roomId = user.uid < selectedAgent.uid 
-      ? `${user.uid}_${selectedAgent.uid}` 
-      : `${selectedAgent.uid}_${user.uid}`;
-      
+    // Save to Local Storage
+    const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}');
+    savedKeys[targetThread.id] = tempKey;
+    localStorage.setItem('commslink_keys', JSON.stringify(savedKeys));
+    
     setEncryptionKey(tempKey);
-    setActiveChat({ id: roomId, otherUser: selectedAgent });
+    setActiveChat(targetThread);
     setShowKeyModal(false);
   };
 
-  // --- GLOBAL STYLES ---
+  const handleDeleteChat = async (threadId) => {
+    if(window.confirm("Are you sure you want to delete this secure channel? This cannot be undone.")) {
+      try {
+        await deleteDoc(doc(db, 'chat_threads', threadId));
+        // Remove key from local storage
+        const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}');
+        delete savedKeys[threadId];
+        localStorage.setItem('commslink_keys', JSON.stringify(savedKeys));
+        setActiveChat(null);
+      } catch (err) { alert("Failed to delete chat."); }
+    }
+  };
+
   const globalStyles = `
     @keyframes popIn { 0% { opacity: 0; transform: translateY(10px) scale(0.98); } 100% { opacity: 1; transform: translateY(0) scale(1); } } 
     .animate-pop-in { animation: popIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } 
@@ -480,9 +537,8 @@ export default function App() {
 
   if (user === null) return <><style>{globalStyles}</style><AuthScreen t={t} /></>;
   
-  if (activeChat) return <><style>{globalStyles}</style><ChatInterface user={user} roomId={activeChat.id} otherUser={activeChat.otherUser} encryptionKey={encryptionKey} goBack={() => setActiveChat(null)} t={t} /></>;
+  if (activeChat) return <><style>{globalStyles}</style><ChatInterface user={user} threadId={activeChat.id} chatData={activeChat} encryptionKey={encryptionKey} goBack={() => setActiveChat(null)} deleteChat={handleDeleteChat} t={t} /></>;
 
-  // --- DASHBOARD (INBOX) SCREEN ---
   return (
     <div className="min-h-screen bg-[#050508] text-slate-200 flex flex-col font-sans relative animate-fade-in">
       <style>{globalStyles}</style>
@@ -492,12 +548,12 @@ export default function App() {
         <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-pop-in">
             <h3 className={`text-xl font-bold mb-1 ${t.text}`}>Secure Uplink</h3>
-            <p className="text-xs text-slate-400 mb-4">Enter the Shared Secret Key to decrypt communications with <span className="text-white font-bold">{selectedAgent?.displayName}</span>.</p>
+            <p className="text-xs text-slate-400 mb-4">Set or enter the Decryption Key for this channel. This key will be saved locally on this device.</p>
             <form onSubmit={confirmChatEntry}>
               <input type="password" autoFocus required value={tempKey} onChange={(e) => setTempKey(e.target.value)} placeholder="Encryption Key" className={`w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 mb-4 outline-none focus:border-white/30 ${t.ring} focus:ring-1`} />
               <div className="flex gap-2">
                 <button type="button" onClick={() => setShowKeyModal(false)} className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 transition-all font-bold text-sm">Cancel</button>
-                <button type="submit" className={`flex-1 py-3 rounded-xl bg-gradient-to-r ${t.sendBtn} text-white font-bold text-sm shadow-lg`}>Decrypt</button>
+                <button type="submit" className={`flex-1 py-3 rounded-xl bg-gradient-to-r ${t.sendBtn} text-white font-bold text-sm shadow-lg`}>Save & Enter</button>
               </div>
             </form>
           </div>
@@ -519,30 +575,59 @@ export default function App() {
         </div>
       </header>
 
-      {/* Dashboard Body */}
-      <div className="flex-1 max-w-3xl w-full mx-auto p-4 sm:p-6">
-        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 pl-2">Available Agents</h3>
+      <div className="flex-1 max-w-3xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-8">
         
-        {usersList.length === 0 ? (
-          <div className="text-center p-12 border border-dashed border-white/10 rounded-2xl bg-white/5">
-            <Users className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-            <p className="text-slate-400 text-sm">You are the only agent on the network right now.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {usersList.map((agent) => (
-              <button key={agent.uid} onClick={() => startChatSequence(agent)} className="flex items-center gap-4 p-4 rounded-2xl bg-[#1a1a24] border border-white/5 hover:border-white/20 hover:bg-white/5 transition-all group text-left">
-                <div className={`w-12 h-12 rounded-full bg-black/50 border border-white/10 flex items-center justify-center group-hover:scale-110 transition-transform`}>
-                  <User className={`w-5 h-5 text-slate-400 group-hover:${t.text} transition-colors`} />
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  <h4 className="font-bold text-slate-200 truncate">{agent.displayName || 'Unknown Agent'}</h4>
-                  <p className="text-xs text-slate-500 truncate flex items-center gap-1"><Lock className="w-3 h-3" /> Encrypted Channel</p>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Establish New Connection Section */}
+        <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-5 shadow-lg">
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2"><Plus className="w-4 h-4" /> Establish Connection</h3>
+          <form onSubmit={handleSearchAndCreateChat} className="flex gap-2">
+            <div className="relative flex-1 group">
+              <div className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500 transition-colors group-focus-within:${t.text}`}><Search className="w-4 h-4" /></div>
+              <input type="text" value={searchAgentId} onChange={(e) => setSearchAgentId(e.target.value)} placeholder="Target Agent ID..." className={`w-full bg-black/50 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm ${t.ring} focus:ring-1 outline-none`} />
+            </div>
+            <button type="submit" disabled={isSearching || !searchAgentId.trim()} className={`bg-gradient-to-r ${t.sendBtn} text-white font-bold px-6 py-3 rounded-xl disabled:opacity-50`}>
+              {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : "Link"}
+            </button>
+          </form>
+        </div>
+
+        {/* Active Channels Section */}
+        <div>
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 pl-2">Active Channels</h3>
+          {chatThreads.length === 0 ? (
+            <div className="text-center p-12 border border-dashed border-white/10 rounded-2xl bg-white/5">
+              <MessageSquare className="w-12 h-12 mx-auto mb-3 text-slate-600" />
+              <p className="text-slate-400 text-sm">No active secure channels. Search for an Agent ID above to establish a link.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {chatThreads.map((thread) => {
+                const otherUserId = thread.participants.find(id => id !== user.uid);
+                const chatName = thread.participantNames[otherUserId] || 'Unknown Agent';
+                const hasLocalKey = !!JSON.parse(localStorage.getItem('commslink_keys') || '{}')[thread.id];
+
+                return (
+                  <button key={thread.id} onClick={() => triggerChatEntry(thread)} className="flex items-center gap-4 p-4 rounded-2xl bg-[#1a1a24] border border-white/5 hover:border-white/20 hover:bg-white/5 transition-all group text-left relative overflow-hidden">
+                    <div className={`w-12 h-12 rounded-full bg-black/50 border border-white/10 flex items-center justify-center group-hover:scale-110 transition-transform z-10 shrink-0`}>
+                      <User className={`w-5 h-5 text-slate-400 group-hover:${t.text} transition-colors`} />
+                    </div>
+                    <div className="flex-1 overflow-hidden z-10">
+                      <h4 className="font-bold text-slate-200 truncate pr-6">{chatName}</h4>
+                      <p className={`text-[10px] truncate flex items-center gap-1 mt-0.5 ${hasLocalKey ? 'text-green-400' : 'text-amber-500'}`}>
+                        {hasLocalKey ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                        {hasLocalKey ? 'Key Cached' : 'Requires Key'}
+                      </p>
+                    </div>
+                    {/* Delete Shortcut overlay on hover */}
+                    <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-red-500/20 to-transparent opacity-0 group-hover:opacity-100 flex items-center justify-end pr-4 transition-opacity z-20" onClick={(e) => { e.stopPropagation(); handleDeleteChat(thread.id); }}>
+                      <Trash2 className="w-4 h-4 text-red-400 hover:text-red-300 hover:scale-110 transition-all" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
