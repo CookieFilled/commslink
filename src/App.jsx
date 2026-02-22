@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from 'firebase/auth';
-import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, deleteDoc, updateDoc, query, where, getDocs } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, getDoc, deleteDoc, updateDoc, query, where, getDocs, arrayUnion } from 'firebase/firestore';
 import { 
   Lock, Unlock, Send, Key, MessageSquare, ShieldAlert, 
   ShieldCheck, LogOut, User, Image as ImageIcon, Loader2, 
-  Check, Users, Palette, Reply, X, Smile, Mic, Square, Play, Pause, ChevronLeft, Fingerprint, Search, Plus, Trash2
+  Check, Users, Palette, Reply, X, Smile, Mic, Square, Play, Pause, ChevronLeft, Fingerprint, Search, Plus, Trash2, Settings, Camera, PenLine, RefreshCw
 } from 'lucide-react';
 
 // --- Firebase Initialization ---
@@ -69,6 +69,25 @@ const compressImage = (file) => {
   });
 };
 
+const compressAvatar = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader(); reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image(); img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        if (w > h) { h *= 150 / w; w = 150; } else { w *= 150 / h; h = 150; }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      };
+      img.onerror = reject;
+    };
+    reader.onerror = reject;
+  });
+};
+
 const blobToBase64 = (blob) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -115,6 +134,8 @@ const themeStyles = {
   matrix: { name: 'Matrix', text: 'text-green-400', border: 'border-green-500/30', ring: 'focus:ring-green-400', bgLight: 'bg-green-500/10', btnGrad: 'from-green-700 to-green-500 hover:from-green-600 hover:to-green-400', sendBtn: 'from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500', msgMine: 'from-green-600/30 to-emerald-600/20 border-green-500/30 text-green-50', glow: 'shadow-[0_0_15px_rgba(34,197,94,0.2)]', title: 'text-green-500 drop-shadow-[0_0_10px_rgba(34,197,94,0.4)]' },
   synthwave: { name: 'Synthwave', text: 'text-pink-400', border: 'border-pink-500/30', ring: 'focus:ring-pink-400', bgLight: 'bg-pink-500/10', btnGrad: 'from-pink-600 to-orange-500 hover:from-pink-500 hover:to-orange-400', sendBtn: 'from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500', msgMine: 'from-pink-600/30 to-purple-600/20 border-pink-500/30 text-pink-50', glow: 'shadow-[0_0_15px_rgba(236,72,153,0.3)]', title: 'text-pink-400 drop-shadow-[0_0_10px_rgba(236,72,153,0.6)]' },
   terminal: { name: 'Terminal', text: 'text-amber-500', border: 'border-amber-500/30', ring: 'focus:ring-amber-500', bgLight: 'bg-amber-500/10', btnGrad: 'from-amber-700 to-amber-600 hover:from-amber-600 hover:to-amber-500', sendBtn: 'from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500', msgMine: 'from-amber-600/20 to-orange-600/10 border-amber-500/30 text-amber-100', glow: 'shadow-[0_0_10px_rgba(245,158,11,0.2)]', title: 'text-amber-500 drop-shadow-[0_0_10px_rgba(245,158,11,0.3)]' },
+  stealth: { name: 'Stealth', text: 'text-slate-300', border: 'border-slate-500/30', ring: 'focus:ring-slate-400', bgLight: 'bg-slate-500/20', btnGrad: 'from-slate-700 to-slate-600 hover:from-slate-600 hover:to-slate-500', sendBtn: 'from-slate-600 to-gray-600 hover:from-slate-500 hover:to-gray-500', msgMine: 'from-slate-700/50 to-gray-700/30 border-slate-500/30 text-slate-100', glow: 'shadow-[0_0_15px_rgba(148,163,184,0.1)]', title: 'text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]' },
+  oceanic: { name: 'Oceanic', text: 'text-teal-400', border: 'border-teal-500/30', ring: 'focus:ring-teal-400', bgLight: 'bg-teal-500/10', btnGrad: 'from-blue-700 to-teal-500 hover:from-blue-600 hover:to-teal-400', sendBtn: 'from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500', msgMine: 'from-teal-600/30 to-blue-600/20 border-teal-500/30 text-teal-50', glow: 'shadow-[0_0_15px_rgba(45,212,191,0.2)]', title: 'text-teal-400 drop-shadow-[0_0_10px_rgba(45,212,191,0.4)]' }
 };
 
 const REACTION_EMOJIS = [
@@ -151,6 +172,7 @@ const AuthScreen = ({ t }) => {
           uid: userCredential.user.uid,
           agentId: safeId,
           displayName: finalName,
+          avatarData: null,
           lastSeen: Date.now()
         });
       }
@@ -202,7 +224,7 @@ const AuthScreen = ({ t }) => {
 };
 
 // --- 2. THE CHAT INTERFACE ---
-const ChatInterface = ({ user, threadId, chatData, encryptionKey, goBack, deleteChat, t }) => {
+const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goBack, deleteChat, t }) => {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -210,6 +232,10 @@ const ChatInterface = ({ user, threadId, chatData, encryptionKey, goBack, delete
   const [zoomedImage, setZoomedImage] = useState(null);
   const [reactionPicker, setReactionPicker] = useState(null);
   
+  // Renaming State
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [newChatName, setNewChatName] = useState('');
+
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const mediaRecorderRef = useRef(null);
@@ -221,9 +247,20 @@ const ChatInterface = ({ user, threadId, chatData, encryptionKey, goBack, delete
   const fileInputRef = useRef(null);
   const activeTouch = useRef({ startX: 0, timer: null, isLongPress: false });
 
-  // Find the other person's name from the chatData
-  const otherUserId = chatData.participants.find(id => id !== user.uid);
-  const chatName = chatData.participantNames[otherUserId] || 'Unknown Agent';
+  // Intelligent display logic for 1-on-1 vs Group
+  const isGroup = chatData.isGroup;
+  let chatName = "Unknown Channel";
+  let chatAvatar = null;
+  let memberCount = chatData.participants?.length || 0;
+
+  if (isGroup) {
+    chatName = chatData.name || "Group Server";
+  } else {
+    const otherUserId = chatData.participants.find(id => id !== user.uid);
+    const otherUserAgent = usersList.find(u => u.uid === otherUserId);
+    chatName = chatData.customName || otherUserAgent?.displayName || 'Unknown Agent';
+    chatAvatar = otherUserAgent?.avatarData || null;
+  }
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'chat_threads', threadId, 'messages'), async (snapshot) => {
@@ -238,6 +275,18 @@ const ChatInterface = ({ user, threadId, chatData, encryptionKey, goBack, delete
     return () => unsubscribe();
   }, [threadId, encryptionKey]);
 
+  // Handle renaming the channel
+  const handleRenameChat = async (e) => {
+    e.preventDefault();
+    if (!newChatName.trim()) { setIsEditingName(false); return; }
+    try {
+      await updateDoc(doc(db, 'chat_threads', threadId), { 
+        [isGroup ? 'name' : 'customName']: newChatName.trim() 
+      });
+      setIsEditingName(false);
+    } catch (err) { alert("Failed to rename channel."); }
+  };
+
   const handleSendText = async (e) => {
     e.preventDefault(); if (!inputText.trim() || !user) return;
     const txt = inputText; setInputText('');
@@ -245,7 +294,6 @@ const ChatInterface = ({ user, threadId, chatData, encryptionKey, goBack, delete
     try {
       const enc = await encryptText(txt, encryptionKey);
       await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: enc, type: 'text', timestamp: Date.now(), replyToId: replyId, reactions: {} });
-      // Update last message time for sorting on dashboard
       await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
     } catch (err) { console.error(err); }
   };
@@ -315,14 +363,42 @@ const ChatInterface = ({ user, threadId, chatData, encryptionKey, goBack, delete
         </div>
       )}
 
-      <header className="bg-[#0f0f14]/90 backdrop-blur-md border-b border-white/10 px-4 py-3 flex items-center justify-between z-30">
-        <div className="flex items-center gap-3">
-          <button onClick={goBack} className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-white/10"><ChevronLeft className="w-6 h-6" /></button>
-          <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${t.bgLight} border ${t.border} flex items-center justify-center ${t.glow}`}><User className={`w-5 h-5 ${t.text}`} /></div>
-          <div><h2 className="font-mono text-md font-bold text-slate-100">{chatName}</h2><p className="text-[10px] text-green-400 flex items-center gap-1"><Lock className="w-3 h-3" /> E2E Encrypted</p></div>
+      {/* Renaming Modal */}
+      {isEditingName && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-pop-in">
+            <h3 className={`text-xl font-bold mb-1 ${t.text}`}>Rename Channel</h3>
+            <p className="text-xs text-slate-400 mb-4">Assign a new identity to this secure link.</p>
+            <form onSubmit={handleRenameChat}>
+              <input type="text" autoFocus required value={newChatName} onChange={(e) => setNewChatName(e.target.value)} placeholder="New Name..." className={`w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 mb-4 outline-none focus:border-white/30 ${t.ring} focus:ring-1`} />
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setIsEditingName(false)} className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 transition-all font-bold text-sm">Cancel</button>
+                <button type="submit" className={`flex-1 py-3 rounded-xl bg-gradient-to-r ${t.sendBtn} text-white font-bold text-sm shadow-lg`}>Update</button>
+              </div>
+            </form>
+          </div>
         </div>
-        <button onClick={() => deleteChat(threadId)} className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all" title="Delete Chat Thread">
-          <Trash2 className="w-5 h-5" />
+      )}
+
+      <header className="bg-[#0f0f14]/90 backdrop-blur-md border-b border-white/10 px-4 py-3 flex items-center justify-between z-30">
+        <div className="flex items-center gap-3 overflow-hidden">
+          <button onClick={goBack} className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-white/10"><ChevronLeft className="w-6 h-6" /></button>
+          
+          <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${t.bgLight} border ${t.border} flex items-center justify-center ${t.glow} overflow-hidden shrink-0`}>
+            {isGroup ? <Users className={`w-5 h-5 ${t.text}`} /> : (chatAvatar ? <img src={chatAvatar} className="w-full h-full object-cover" /> : <User className={`w-5 h-5 ${t.text}`} />)}
+          </div>
+          
+          <div className="flex flex-col truncate pr-2 group cursor-pointer" onClick={() => { setNewChatName(chatName); setIsEditingName(true); }}>
+            <h2 className="font-mono text-md font-bold text-slate-100 flex items-center gap-2 truncate">
+              {chatName} <PenLine className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </h2>
+            <p className="text-[10px] text-green-400 flex items-center gap-1">
+              <Lock className="w-3 h-3" /> {isGroup ? `${memberCount} Agents Connected` : 'E2E Encrypted'}
+            </p>
+          </div>
+        </div>
+        <button onClick={() => deleteChat(threadId, isGroup)} className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all shrink-0" title={isGroup ? "Leave Group" : "Delete Chat"}>
+          {isGroup ? <LogOut className="w-5 h-5" /> : <Trash2 className="w-5 h-5" />}
         </button>
       </header>
 
@@ -348,6 +424,9 @@ const ChatInterface = ({ user, threadId, chatData, encryptionKey, goBack, delete
                   <div className="grid grid-cols-6 gap-1">{REACTION_EMOJIS.map(emoji => (<button key={emoji} onClick={() => toggleReaction(msg.id, msg.reactions, emoji)} className="w-9 h-9 hover:bg-white/10 rounded-lg text-xl">{emoji}</button>))}</div>
                 </div>
               )}
+
+              {/* Group Chat Needs to show WHO sent the message if it's not yours */}
+              {isGroup && !isMine && <span className="text-[10px] text-slate-500 mb-1 ml-1">{msg.senderName}</span>}
 
               <div className={`p-1.5 rounded-2xl shadow-lg relative ${msg.isDecrypted ? isMine ? `bg-gradient-to-br ${t.msgMine} rounded-tr-sm border` : 'bg-[#1a1a24] border border-white/10 text-slate-200 rounded-tl-sm' : 'bg-red-900/20 border border-red-500/30 text-red-300 rounded-tl-sm'}`}>
                 {repliedMsg && repliedMsg.isDecrypted && (
@@ -402,35 +481,60 @@ const ChatInterface = ({ user, threadId, chatData, encryptionKey, goBack, delete
 };
 
 
-// --- 3. MAIN APP ROUTER (DASHBOARD & LOCAL KEYS) ---
+// --- 3. MAIN APP ROUTER (DASHBOARD & GROUPS) ---
 export default function App() {
   const [user, setUser] = useState(null);
+  const [currentUserData, setCurrentUserData] = useState(null);
+  const [usersList, setUsersList] = useState([]);
   const [chatThreads, setChatThreads] = useState([]);
-  const [activeChat, setActiveChat] = useState(null); // { id: 'thread_id', data: {} }
+  const [activeChat, setActiveChat] = useState(null);
   const [encryptionKey, setEncryptionKey] = useState('');
   
   const [themeMode, setThemeMode] = useState('cyberpunk');
   const t = themeStyles[themeMode];
   
   const [showKeyModal, setShowKeyModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [targetThread, setTargetThread] = useState(null);
   const [tempKey, setTempKey] = useState('');
   
+  // Dashboard Tabs
+  const [connectMode, setConnectMode] = useState('agent'); // 'agent' or 'group'
   const [searchAgentId, setSearchAgentId] = useState('');
+  const [groupNameInput, setGroupNameInput] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+
+  const [editName, setEditName] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const avatarInputRef = useRef(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => { setUser(currentUser); });
     return () => unsubscribe();
   }, []);
 
-  // Fetch active chat threads where user is a participant
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const others = [];
+      snapshot.forEach(doc => {
+        if (doc.id === user.uid) {
+          setCurrentUserData(doc.data());
+          setEditName(doc.data().displayName || '');
+        } else {
+          others.push(doc.data());
+        }
+      });
+      setUsersList(others);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, 'chat_threads'), where('participants', 'array-contains', user.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const threads = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Sort by newest activity
       threads.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
       setChatThreads(threads);
     });
@@ -444,7 +548,66 @@ export default function App() {
 
   const handleLogout = () => { signOut(auth); setActiveChat(null); };
 
-  // Search for an agent and spin up a NEW thread
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    if (!editName.trim()) return;
+    setIsSavingProfile(true);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { displayName: editName });
+      await updateProfile(user, { displayName: editName });
+      setShowProfileModal(false);
+    } catch (err) { alert("Failed to update profile."); }
+    setIsSavingProfile(false);
+  };
+
+  const handleAvatarChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const compressedAvatarBase64 = await compressAvatar(file);
+      await updateDoc(doc(db, 'users', user.uid), { avatarData: compressedAvatarBase64 });
+    } catch (err) { alert("Failed to update avatar."); }
+  };
+
+  // V1 Style Random Group Generator
+  const generateRandomGroup = () => {
+    const adj = ['silent', 'dark', 'hidden', 'crypto', 'neon', 'shadow'];
+    const nouns = ['vault', 'nexus', 'ghost', 'signal', 'pulse', 'void'];
+    setGroupNameInput(`${adj[Math.floor(Math.random() * adj.length)]}-${nouns[Math.floor(Math.random() * nouns.length)]}-${Math.floor(1000 + Math.random() * 9000)}`);
+  };
+
+  // Join or Create a V1 Style Group Server
+  const handleGroupJoin = async (e) => {
+    e.preventDefault();
+    if (!groupNameInput.trim()) return;
+    setIsSearching(true);
+    try {
+      const safeGroupId = groupNameInput.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      const groupRef = doc(db, 'chat_threads', safeGroupId);
+      const groupSnap = await getDoc(groupRef);
+
+      if (groupSnap.exists()) {
+        // Room exists, join it
+        if (!groupSnap.data().participants.includes(user.uid)) {
+          await updateDoc(groupRef, { participants: arrayUnion(user.uid) });
+        }
+      } else {
+        // Room does not exist, create it
+        await setDoc(groupRef, {
+          isGroup: true,
+          name: groupNameInput.trim(),
+          participants: [user.uid],
+          createdAt: Date.now(),
+          lastActivity: Date.now()
+        });
+      }
+      setGroupNameInput('');
+      triggerChatEntry({ id: safeGroupId, isGroup: true, name: groupNameInput.trim() });
+    } catch (err) { alert("Failed to connect to group."); }
+    setIsSearching(false);
+  };
+
+  // Direct 1-on-1 Link
   const handleSearchAndCreateChat = async (e) => {
     e.preventDefault();
     if (!searchAgentId.trim()) return;
@@ -452,22 +615,13 @@ export default function App() {
     try {
       const q = query(collection(db, 'users'), where('agentId', '==', searchAgentId.trim().toLowerCase()));
       const snap = await getDocs(q);
+      if (snap.empty) { alert("Agent ID not found in the network."); setIsSearching(false); return; }
       
-      if (snap.empty) {
-        alert("Agent ID not found in the network.");
-        setIsSearching(false);
-        return;
-      }
-
       const targetAgent = snap.docs[0].data();
-      if (targetAgent.uid === user.uid) {
-        alert("You cannot start a chat with yourself.");
-        setIsSearching(false);
-        return;
-      }
+      if (targetAgent.uid === user.uid) { alert("You cannot start a chat with yourself."); setIsSearching(false); return; }
 
-      // Create a brand new thread document
       const newThreadRef = await addDoc(collection(db, 'chat_threads'), {
+        isGroup: false,
         participants: [user.uid, targetAgent.uid],
         participantNames: { [user.uid]: user.displayName, [targetAgent.uid]: targetAgent.displayName },
         createdAt: Date.now(),
@@ -475,52 +629,49 @@ export default function App() {
       });
 
       setSearchAgentId('');
-      // Open the key modal for the newly created thread
-      triggerChatEntry({ id: newThreadRef.id, participants: [user.uid, targetAgent.uid], participantNames: { [user.uid]: user.displayName, [targetAgent.uid]: targetAgent.displayName } });
-
+      triggerChatEntry({ id: newThreadRef.id, participants: [user.uid, targetAgent.uid] });
     } catch (err) { console.error("Search failed:", err); }
     setIsSearching(false);
   };
 
-  // Open a chat (checks local storage for keys first)
   const triggerChatEntry = (thread) => {
     const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}');
-    if (savedKeys[thread.id]) {
-      // We have the key saved locally! Skip the modal.
-      setEncryptionKey(savedKeys[thread.id]);
-      setActiveChat(thread);
-    } else {
-      // Ask for the key
-      setTargetThread(thread);
-      setTempKey('');
-      setShowKeyModal(true);
-    }
+    if (savedKeys[thread.id]) { setEncryptionKey(savedKeys[thread.id]); setActiveChat(thread); } 
+    else { setTargetThread(thread); setTempKey(''); setShowKeyModal(true); }
   };
 
   const confirmChatEntry = (e) => {
     e.preventDefault();
     if (!tempKey.trim()) return;
-    
-    // Save to Local Storage
     const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}');
     savedKeys[targetThread.id] = tempKey;
     localStorage.setItem('commslink_keys', JSON.stringify(savedKeys));
-    
-    setEncryptionKey(tempKey);
-    setActiveChat(targetThread);
-    setShowKeyModal(false);
+    setEncryptionKey(tempKey); setActiveChat(targetThread); setShowKeyModal(false);
   };
 
-  const handleDeleteChat = async (threadId) => {
-    if(window.confirm("Are you sure you want to delete this secure channel? This cannot be undone.")) {
+  const handleDeleteChat = async (threadId, isGroup) => {
+    if(window.confirm(isGroup ? "Are you sure you want to leave this group?" : "Are you sure you want to delete this secure channel?")) {
       try {
-        await deleteDoc(doc(db, 'chat_threads', threadId));
-        // Remove key from local storage
+        if (isGroup) {
+          // Instead of deleting the whole group, just remove the user from participants
+          const groupRef = doc(db, 'chat_threads', threadId);
+          const groupSnap = await getDoc(groupRef);
+          const newParticipants = groupSnap.data().participants.filter(id => id !== user.uid);
+          
+          if (newParticipants.length === 0) {
+             await deleteDoc(groupRef); // If last person leaves, delete the room
+          } else {
+             await updateDoc(groupRef, { participants: newParticipants });
+          }
+        } else {
+          await deleteDoc(doc(db, 'chat_threads', threadId));
+        }
+        
         const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}');
         delete savedKeys[threadId];
         localStorage.setItem('commslink_keys', JSON.stringify(savedKeys));
         setActiveChat(null);
-      } catch (err) { alert("Failed to delete chat."); }
+      } catch (err) { alert("Action failed."); }
     }
   };
 
@@ -537,11 +688,42 @@ export default function App() {
 
   if (user === null) return <><style>{globalStyles}</style><AuthScreen t={t} /></>;
   
-  if (activeChat) return <><style>{globalStyles}</style><ChatInterface user={user} threadId={activeChat.id} chatData={activeChat} encryptionKey={encryptionKey} goBack={() => setActiveChat(null)} deleteChat={handleDeleteChat} t={t} /></>;
+  if (activeChat) return <><style>{globalStyles}</style><ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={activeChat} encryptionKey={encryptionKey} goBack={() => setActiveChat(null)} deleteChat={handleDeleteChat} t={t} /></>;
 
   return (
     <div className="min-h-screen bg-[#050508] text-slate-200 flex flex-col font-sans relative animate-fade-in">
       <style>{globalStyles}</style>
+
+      {/* Profile Settings Modal */}
+      {showProfileModal && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-pop-in">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className={`text-xl font-bold ${t.text}`}>Agent Protocol</h3>
+              <button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            
+            <div className="flex flex-col items-center mb-6">
+              <input type="file" accept="image/*" className="hidden" ref={avatarInputRef} onChange={handleAvatarChange} />
+              <div onClick={() => avatarInputRef.current?.click()} className={`relative w-24 h-24 rounded-full bg-gradient-to-br ${t.bgLight} border-2 ${t.border} flex items-center justify-center cursor-pointer group overflow-hidden shadow-lg`}>
+                {currentUserData?.avatarData ? <img src={currentUserData.avatarData} className="w-full h-full object-cover group-hover:opacity-50 transition-all" /> : <User className={`w-10 h-10 ${t.text} group-hover:opacity-50 transition-all`} />}
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"><Camera className="w-8 h-8 text-white drop-shadow-md" /></div>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-2 uppercase tracking-widest">Click to change avatar</p>
+            </div>
+
+            <form onSubmit={handleUpdateProfile}>
+              <div className="flex flex-col gap-2 mb-6">
+                <label className="text-xs font-semibold text-slate-400 uppercase">Display Name</label>
+                <input type="text" autoFocus required value={editName} onChange={(e) => setEditName(e.target.value)} className={`w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-white/30 ${t.ring} focus:ring-1`} />
+              </div>
+              <button type="submit" disabled={isSavingProfile} className={`w-full py-3 rounded-xl bg-gradient-to-r ${t.sendBtn} text-white font-bold text-sm shadow-lg flex justify-center items-center`}>
+                {isSavingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save Profile"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Password Modal */}
       {showKeyModal && (
@@ -560,13 +742,14 @@ export default function App() {
         </div>
       )}
 
-      {/* Dashboard Header */}
       <header className="bg-[#0f0f14]/90 backdrop-blur-md border-b border-white/10 px-6 py-5 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-4">
-          <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${t.bgLight} border ${t.border} flex items-center justify-center ${t.glow}`}><ShieldCheck className={`w-6 h-6 ${t.text}`} /></div>
+          <button onClick={() => setShowProfileModal(true)} className={`w-12 h-12 rounded-full bg-gradient-to-br ${t.bgLight} border ${t.border} flex items-center justify-center ${t.glow} hover:scale-105 transition-all overflow-hidden shadow-lg cursor-pointer`} title="Edit Profile">
+            {currentUserData?.avatarData ? <img src={currentUserData.avatarData} className="w-full h-full object-cover" /> : <Settings className={`w-6 h-6 ${t.text}`} />}
+          </button>
           <div>
             <h2 className="font-mono text-xl font-bold text-slate-100">Global Network</h2>
-            <p className="text-xs text-green-400 flex items-center gap-1">Welcome, {user.displayName || 'Agent'}</p>
+            <p className="text-xs text-green-400 flex items-center gap-1">Agent {currentUserData?.displayName || 'Unknown'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -577,18 +760,37 @@ export default function App() {
 
       <div className="flex-1 max-w-3xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-8">
         
-        {/* Establish New Connection Section */}
+        {/* Establish Connection Section (Tabs) */}
         <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-5 shadow-lg">
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2"><Plus className="w-4 h-4" /> Establish Connection</h3>
-          <form onSubmit={handleSearchAndCreateChat} className="flex gap-2">
-            <div className="relative flex-1 group">
-              <div className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500 transition-colors group-focus-within:${t.text}`}><Search className="w-4 h-4" /></div>
-              <input type="text" value={searchAgentId} onChange={(e) => setSearchAgentId(e.target.value)} placeholder="Target Agent ID..." className={`w-full bg-black/50 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm ${t.ring} focus:ring-1 outline-none`} />
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Plus className="w-4 h-4" /> Establish Link</h3>
+            <div className="flex gap-2 bg-black/40 p-1 rounded-lg border border-white/5">
+              <button onClick={() => setConnectMode('agent')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${connectMode === 'agent' ? `bg-gradient-to-r ${t.sendBtn} text-white` : 'text-slate-400 hover:text-white'}`}>1-on-1</button>
+              <button onClick={() => setConnectMode('group')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${connectMode === 'group' ? `bg-gradient-to-r ${t.sendBtn} text-white` : 'text-slate-400 hover:text-white'}`}>Group Server</button>
             </div>
-            <button type="submit" disabled={isSearching || !searchAgentId.trim()} className={`bg-gradient-to-r ${t.sendBtn} text-white font-bold px-6 py-3 rounded-xl disabled:opacity-50`}>
-              {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : "Link"}
-            </button>
-          </form>
+          </div>
+
+          {connectMode === 'agent' ? (
+            <form onSubmit={handleSearchAndCreateChat} className="flex gap-2 animate-fade-in">
+              <div className="relative flex-1 group">
+                <div className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500 transition-colors group-focus-within:${t.text}`}><Search className="w-4 h-4" /></div>
+                <input type="text" value={searchAgentId} onChange={(e) => setSearchAgentId(e.target.value)} placeholder="Target Agent ID..." className={`w-full bg-black/50 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm ${t.ring} focus:ring-1 outline-none`} />
+              </div>
+              <button type="submit" disabled={isSearching || !searchAgentId.trim()} className={`bg-gradient-to-r ${t.sendBtn} text-white font-bold px-6 py-3 rounded-xl disabled:opacity-50`}>
+                {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : "Link"}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleGroupJoin} className="flex gap-2 animate-fade-in">
+              <div className="relative flex-1 group flex items-center gap-2">
+                <input type="text" value={groupNameInput} onChange={(e) => setGroupNameInput(e.target.value)} placeholder="Enter Group Name..." className={`w-full bg-black/50 border border-white/10 rounded-xl py-3 pl-4 pr-10 text-sm ${t.ring} focus:ring-1 outline-none`} />
+                <button type="button" onClick={generateRandomGroup} className={`absolute right-3 p-1.5 rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:${t.text} transition-colors`} title="Random Group Name"><RefreshCw className="w-3.5 h-3.5" /></button>
+              </div>
+              <button type="submit" disabled={isSearching || !groupNameInput.trim()} className={`bg-gradient-to-r ${t.sendBtn} text-white font-bold px-6 py-3 rounded-xl disabled:opacity-50 flex items-center gap-2`}>
+                {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Users className="w-4 h-4" /> Join</>}
+              </button>
+            </form>
+          )}
         </div>
 
         {/* Active Channels Section */}
@@ -597,19 +799,30 @@ export default function App() {
           {chatThreads.length === 0 ? (
             <div className="text-center p-12 border border-dashed border-white/10 rounded-2xl bg-white/5">
               <MessageSquare className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-              <p className="text-slate-400 text-sm">No active secure channels. Search for an Agent ID above to establish a link.</p>
+              <p className="text-slate-400 text-sm">No active secure channels. Create a link above to begin.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {chatThreads.map((thread) => {
-                const otherUserId = thread.participants.find(id => id !== user.uid);
-                const chatName = thread.participantNames[otherUserId] || 'Unknown Agent';
+                const isGroup = thread.isGroup;
+                let chatName = "Unknown";
+                let chatAvatar = null;
+                
+                if (isGroup) {
+                  chatName = thread.name || "Group Server";
+                } else {
+                  const otherUserId = thread.participants.find(id => id !== user.uid);
+                  const otherUserAgent = usersList.find(u => u.uid === otherUserId);
+                  chatName = thread.customName || otherUserAgent?.displayName || thread.participantNames[otherUserId] || 'Unknown Agent';
+                  chatAvatar = otherUserAgent?.avatarData || null;
+                }
+
                 const hasLocalKey = !!JSON.parse(localStorage.getItem('commslink_keys') || '{}')[thread.id];
 
                 return (
-                  <button key={thread.id} onClick={() => triggerChatEntry(thread)} className="flex items-center gap-4 p-4 rounded-2xl bg-[#1a1a24] border border-white/5 hover:border-white/20 hover:bg-white/5 transition-all group text-left relative overflow-hidden">
-                    <div className={`w-12 h-12 rounded-full bg-black/50 border border-white/10 flex items-center justify-center group-hover:scale-110 transition-transform z-10 shrink-0`}>
-                      <User className={`w-5 h-5 text-slate-400 group-hover:${t.text} transition-colors`} />
+                  <button key={thread.id} onClick={() => triggerChatEntry(thread)} className="flex items-center gap-4 p-4 rounded-2xl bg-[#1a1a24] border border-white/5 hover:border-white/20 hover:bg-white/5 transition-all group text-left relative overflow-hidden shadow-sm hover:shadow-md">
+                    <div className={`w-12 h-12 rounded-full bg-black/50 border border-white/10 flex items-center justify-center group-hover:scale-110 transition-transform z-10 shrink-0 overflow-hidden`}>
+                      {isGroup ? <Users className={`w-5 h-5 text-slate-400 group-hover:${t.text} transition-colors`} /> : (chatAvatar ? <img src={chatAvatar} className="w-full h-full object-cover" /> : <User className={`w-5 h-5 text-slate-400 group-hover:${t.text} transition-colors`} />)}
                     </div>
                     <div className="flex-1 overflow-hidden z-10">
                       <h4 className="font-bold text-slate-200 truncate pr-6">{chatName}</h4>
@@ -618,9 +831,8 @@ export default function App() {
                         {hasLocalKey ? 'Key Cached' : 'Requires Key'}
                       </p>
                     </div>
-                    {/* Delete Shortcut overlay on hover */}
-                    <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-red-500/20 to-transparent opacity-0 group-hover:opacity-100 flex items-center justify-end pr-4 transition-opacity z-20" onClick={(e) => { e.stopPropagation(); handleDeleteChat(thread.id); }}>
-                      <Trash2 className="w-4 h-4 text-red-400 hover:text-red-300 hover:scale-110 transition-all" />
+                    <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-red-500/20 to-transparent opacity-0 group-hover:opacity-100 flex items-center justify-end pr-4 transition-opacity z-20" onClick={(e) => { e.stopPropagation(); handleDeleteChat(thread.id, isGroup); }}>
+                      {isGroup ? <LogOut className="w-4 h-4 text-red-400 hover:text-red-300 hover:scale-110 transition-all" title="Leave Group" /> : <Trash2 className="w-4 h-4 text-red-400 hover:text-red-300 hover:scale-110 transition-all" title="Delete Channel" />}
                     </div>
                   </button>
                 );
