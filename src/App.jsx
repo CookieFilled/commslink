@@ -3,7 +3,11 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot } from 'firebase/firestore';
 import { getAnalytics } from "firebase/analytics";
-import { Lock, Unlock, Send, Key, MessageSquare, ShieldAlert, ShieldCheck, LogOut, User, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { 
+  Lock, Unlock, Send, Key, MessageSquare, ShieldAlert, 
+  ShieldCheck, LogOut, User, Image as ImageIcon, Loader2, 
+  RefreshCw, Share2, Check 
+} from 'lucide-react';
 
 // --- Firebase Initialization ---
 const firebaseConfig = {
@@ -106,7 +110,6 @@ const compressImage = (file) => {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        // Compress to JPEG with 60% quality
         const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
         resolve(dataUrl);
       };
@@ -125,6 +128,7 @@ export default function App() {
   const [displayName, setDisplayName] = useState('');
   const [roomId, setRoomId] = useState('');
   const [encryptionKey, setEncryptionKey] = useState('');
+  const [copied, setCopied] = useState(false); // NEW: State for share button
   
   // Chat State
   const [messages, setMessages] = useState([]);
@@ -134,6 +138,31 @@ export default function App() {
   
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // NEW: Read Room ID from URL on Load (One-Click Join)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const roomFromUrl = params.get('room');
+    if (roomFromUrl) {
+      setRoomId(roomFromUrl);
+    }
+  }, []);
+
+  // NEW: Generate Random Room Function
+  const generateRandomRoom = () => {
+    const adjectives = ['silent', 'dark', 'hidden', 'crypto', 'neon', 'shadow'];
+    const nouns = ['vault', 'nexus', 'ghost', 'signal', 'pulse', 'void'];
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    setRoomId(`${adjectives[Math.floor(Math.random() * adjectives.length)]}-${nouns[Math.floor(Math.random() * nouns.length)]}-${randomNum}`);
+  };
+
+  // NEW: Copy Share Link Function
+  const copyRoomLink = () => {
+    const url = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+    navigator.clipboard.writeText(`Join my secure CommsLink room!\n\nRoom: ${roomId}\nLink: ${url}\n\n(You will still need the secret decryption key)`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   // 1. Authentication Effect
   useEffect(() => {
@@ -154,7 +183,6 @@ export default function App() {
   useEffect(() => {
     if (!user || !isJoined || !roomId || !encryptionKey) return;
 
-    // Simplified standard Firestore path
     const roomRef = collection(db, 'secure_rooms', roomId, 'messages');
     
     const unsubscribe = onSnapshot(roomRef, async (snapshot) => {
@@ -267,6 +295,8 @@ export default function App() {
     e.preventDefault();
     if (roomId.trim() && encryptionKey.trim()) {
       setIsJoined(true);
+      // Clean up the URL visually without reloading the page
+      window.history.replaceState({}, '', window.location.pathname);
     }
   };
 
@@ -337,15 +367,22 @@ export default function App() {
             </div>
 
             <div className="flex flex-col gap-2 group">
-              <label className="text-xs font-semibold text-slate-400 uppercase flex items-center gap-2 transition-colors group-focus-within:text-cyan-400">
-                <MessageSquare className="w-4 h-4 text-cyan-400" /> Channel ID
+              <label className="text-xs font-semibold text-slate-400 uppercase flex items-center justify-between transition-colors group-focus-within:text-cyan-400">
+                <span className="flex items-center gap-2"><MessageSquare className="w-4 h-4 text-cyan-400" /> Channel ID</span>
+                <button 
+                  type="button"
+                  onClick={generateRandomRoom}
+                  className="text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 px-2 py-1 rounded border border-cyan-500/20 transition-all flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3 h-3" /> Randomize
+                </button>
               </label>
               <input 
                 type="text" 
                 required
                 value={roomId}
                 onChange={(e) => setRoomId(e.target.value)}
-                placeholder="e.g. alpha-squad"
+                placeholder="e.g. shadow-vault-4092"
                 className="bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-sm focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 outline-none transition-all placeholder:text-slate-600"
               />
             </div>
@@ -401,12 +438,25 @@ export default function App() {
             </p>
           </div>
         </div>
-        <button 
-          onClick={handleLeave}
-          className="text-slate-400 hover:text-pink-400 p-2 rounded-lg hover:bg-white/5 transition-all duration-300 flex items-center gap-2 text-sm font-semibold group"
-        >
-          <LogOut className="w-4 h-4 transform group-hover:-translate-x-1 transition-transform" /> Disconnect
-        </button>
+
+        <div className="flex items-center gap-2">
+          {/* NEW: Share Link Button */}
+          <button 
+            onClick={copyRoomLink}
+            className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
+              copied ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-white/5 text-slate-300 hover:bg-white/10 border border-white/10'
+            }`}
+          >
+            {copied ? <><Check className="w-4 h-4" /> Copied!</> : <><Share2 className="w-4 h-4" /> Invite</>}
+          </button>
+
+          <button 
+            onClick={handleLeave}
+            className="text-slate-400 hover:text-pink-400 p-2 rounded-lg hover:bg-white/5 transition-all duration-300 flex items-center gap-2 text-sm font-semibold group"
+          >
+            <LogOut className="w-4 h-4 transform group-hover:-translate-x-1 transition-transform" /> Disconnect
+          </button>
+        </div>
       </header>
 
       {/* Main Chat Area with Drag & Drop */}
