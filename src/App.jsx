@@ -336,7 +336,8 @@ export default function App() {
                 onTouchEnd={e => handleTouchEnd(e, msg)}
               >
                 {/* Desktop Hover Actions (Reply & React) */}
-                <div className={`hidden md:group-hover:flex absolute top-1/2 -translate-y-1/2 ${isMine ? 'right-full mr-3' : 'left-full ml-3'} items-center gap-1 animate-fade-in`}>
+                {/* Desktop Hover Actions (Reply & React) */}
+<div className={`hidden md:flex absolute top-1/2 -translate-y-1/2 ${isMine ? 'right-full pr-3' : 'left-full pl-3'} items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none group-hover:pointer-events-auto z-10`}>
                   <button onClick={(e) => { e.stopPropagation(); setReactionPicker(msg.id === reactionPicker ? null : msg.id); }} className={`p-2 bg-[#1a1a24] border border-white/10 ${t.text} hover:bg-white/10 rounded-full shadow-lg transition-transform hover:scale-110`} title="React">
                     <Smile className="w-4 h-4" />
                   </button>
