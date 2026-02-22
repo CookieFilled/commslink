@@ -7,7 +7,7 @@ import {
   Lock, Unlock, Send, Key, MessageSquare, ShieldAlert, 
   ShieldCheck, LogOut, User, Image as ImageIcon, Loader2, 
   RefreshCw, Share2, Check, Users, Palette, Reply, X, Smile,
-  Mic, Square 
+  Mic, Square, Play, Pause
 } from 'lucide-react';
 
 // --- Firebase Initialization ---
@@ -52,7 +52,7 @@ const decryptText = async (base64, password) => {
   } catch (e) { return null; }
 };
 
-// --- Media Converters ---
+// --- Media Converters & Players ---
 const compressImage = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader(); reader.readAsDataURL(file);
@@ -81,6 +81,43 @@ const blobToBase64 = (blob) => {
   });
 };
 
+// Custom Audio Player Component to fix UI and Touch Bugs
+const CustomAudioPlayer = ({ src, t }) => {
+  const audioRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  const togglePlay = (e) => {
+    e.stopPropagation(); // Prevents clicks from triggering outer elements
+    if (isPlaying) audioRef.current.pause();
+    else audioRef.current.play();
+    setIsPlaying(!isPlaying);
+  };
+
+  const handleTimeUpdate = () => {
+    const current = audioRef.current.currentTime;
+    const total = audioRef.current.duration;
+    setProgress(total ? (current / total) * 100 : 0);
+  };
+
+  const handleEnded = () => {
+    setIsPlaying(false);
+    setProgress(0);
+  };
+
+  return (
+    <div className={`flex items-center gap-3 px-3 py-2 bg-black/40 rounded-xl border border-white/5 w-[200px] sm:w-[250px]`}>
+      <button onClick={togglePlay} className={`w-8 h-8 flex items-center justify-center rounded-full ${t.bgLight} ${t.text} hover:opacity-80 transition-all shrink-0`}>
+        {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 ml-0.5 fill-current" />}
+      </button>
+      <div className="flex-1 h-1.5 bg-black/50 rounded-full overflow-hidden relative">
+        <div className={`absolute left-0 top-0 bottom-0 bg-gradient-to-r ${t.sendBtn} transition-all duration-75`} style={{ width: `${progress}%` }}></div>
+      </div>
+      <audio ref={audioRef} src={src} onTimeUpdate={handleTimeUpdate} onEnded={handleEnded} />
+    </div>
+  );
+};
+
 // --- Expanded Themes Configuration ---
 const themeStyles = {
   cyberpunk: { name: 'Cyberpunk', text: 'text-cyan-400', border: 'border-cyan-500/30', ring: 'focus:ring-cyan-400', bgLight: 'bg-cyan-500/10', btnGrad: 'from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500', sendBtn: 'from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500', msgMine: 'from-cyan-600/30 to-blue-600/20 border-cyan-500/30 text-cyan-50', glow: 'shadow-[0_0_15px_rgba(6,182,212,0.2)]', title: 'text-[#00ff41] drop-shadow-[0_0_10px_rgba(0,255,65,0.4)]' },
@@ -92,16 +129,16 @@ const themeStyles = {
   oceanic: { name: 'Oceanic', text: 'text-teal-400', border: 'border-teal-500/30', ring: 'focus:ring-teal-400', bgLight: 'bg-teal-500/10', btnGrad: 'from-blue-700 to-teal-500 hover:from-blue-600 hover:to-teal-400', sendBtn: 'from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500', msgMine: 'from-teal-600/30 to-blue-600/20 border-teal-500/30 text-teal-50', glow: 'shadow-[0_0_15px_rgba(45,212,191,0.2)]', title: 'text-teal-400 drop-shadow-[0_0_10px_rgba(45,212,191,0.4)]' }
 };
 
-// Expanded to 48 Emojis (8 rows of 6)
+// 48 Highly Requested Emojis (Grid format 8x6)
 const REACTION_EMOJIS = [
   '👍', '❤️', '😂', '🔥', '🥺', '🎉', 
   '💯', '🤔', '👀', '🙌', '👏', '🙏', 
-  '🖕', '💀', '😭', '🤯', '😡', '🤢', 
+  '✨', '💀', '😭', '🤯', '😡', '🤢', 
   '🤡', '👻', '👽', '🤖', '💩', '😎', 
   '🤓', '🥳', '😴', '🙄', '🤐', '🤫', 
   '🤬', '😈', '✌️', '🤘', '👌', '🤌', 
-  '💪', '🙂', '⚛️', '🔬', '🦠', '💊', 
-  '🧬', '🩺', '💡', '🧪', '🔭', '📉'
+  '💪', '🧠', '🖕', '🙂', '🫦', '🥵', 
+  '🥶', '🥴', '🧊', '🩸', '🧪', '📉'
 ];
 
 export default function App() {
@@ -219,12 +256,22 @@ export default function App() {
     } catch (err) { console.error(err); } finally { setIsUploading(false); }
   };
 
-  // --- VOICE RECORDING BASE64 LOGIC ---
+  // --- HYPER-COMPRESSED VOICE RECORDING ---
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Force extreme compression: Mono, 16kHz
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { sampleRate: 16000, channelCount: 1 } 
+      });
       mediaStreamRef.current = stream;
-      const mediaRecorder = new MediaRecorder(stream);
+      
+      // Attempt to limit to 12kbps bitrate
+      let options = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 12000 };
+      if (!MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        options = { mimeType: 'audio/webm', audioBitsPerSecond: 12000 };
+      }
+      
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       mediaChunksRef.current = [];
 
@@ -252,7 +299,7 @@ export default function App() {
           setReplyingTo(null);
         } catch (error) { 
           console.error("Audio encryption failed. File might be too large.", error); 
-          alert("Failed to send: Audio clip too large. Keep it under 60 seconds.");
+          alert("Failed to send: Audio clip too large. Ensure background noise is low.");
         }
         setIsUploading(false);
       };
@@ -260,7 +307,6 @@ export default function App() {
       mediaRecorder.start();
       setIsRecording(true);
       
-      // Timer for visual feedback and auto-cutoff
       recordingTimerRef.current = setInterval(() => {
         setRecordingTime((prev) => {
           if (prev >= 59) {
@@ -329,7 +375,6 @@ export default function App() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // Improved Scrollbar logic added here
   const globalStyles = `
     @keyframes popIn { 0% { opacity: 0; transform: translateY(10px) scale(0.98); } 100% { opacity: 1; transform: translateY(0) scale(1); } } 
     .animate-pop-in { animation: popIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } 
@@ -339,10 +384,7 @@ export default function App() {
     .animate-slide-up { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
     .glass-picker { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
-    audio::-webkit-media-controls-panel { background-color: rgba(255, 255, 255, 0.1); border-radius: 12px; }
-    audio::-webkit-media-controls-current-time-display, audio::-webkit-media-controls-time-remaining-display { color: #fff; text-shadow: none; }
     
-    /* Sleek scrollbar for the emoji picker */
     .custom-scrollbar::-webkit-scrollbar { width: 5px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
@@ -442,10 +484,10 @@ export default function App() {
 
                 {/* Expanded Grid Reaction Picker Popup */}
                 {reactionPicker === msg.id && (
-                  <div className={`absolute ${isMine ? 'right-0' : 'left-0'} bottom-full mb-2 bg-[#1a1a24]/95 glass-picker border border-white/10 rounded-2xl shadow-2xl p-3 z-50 animate-pop-in w-64 max-h-48 overflow-y-auto custom-scrollbar`} onClick={e => e.stopPropagation()}>
-                    <div className="grid grid-cols-6 gap-2">
+                  <div className={`absolute ${isMine ? 'right-0' : 'left-0'} bottom-full mb-2 bg-[#1a1a24]/95 glass-picker border border-white/10 rounded-2xl shadow-2xl p-3 z-50 animate-pop-in w-[270px] max-h-48 overflow-y-auto custom-scrollbar`} onClick={e => e.stopPropagation()}>
+                    <div className="grid grid-cols-6 gap-1">
                       {REACTION_EMOJIS.map(emoji => (
-                        <button key={emoji} onClick={() => toggleReaction(msg.id, msg.reactions, emoji)} className="w-8 h-8 flex items-center justify-center hover:bg-white/10 rounded-lg hover:scale-110 transition-all text-xl">
+                        <button key={emoji} onClick={() => toggleReaction(msg.id, msg.reactions, emoji)} className="w-9 h-9 flex items-center justify-center hover:bg-white/10 rounded-lg hover:scale-110 transition-all text-xl">
                           {emoji}
                         </button>
                       ))}
@@ -469,8 +511,8 @@ export default function App() {
                         <img src={msg.decryptedText} alt="Attached" className="max-w-full rounded-xl group-hover:opacity-90 transition-opacity duration-300" style={{maxHeight:'350px'}} />
                       </div>
                     ) : msg.type === 'audio' ? (
-                      <div className="px-2 py-1">
-                        <audio controls src={msg.decryptedText} className="max-w-[200px] sm:max-w-xs outline-none" />
+                      <div className="p-1">
+                        <CustomAudioPlayer src={msg.decryptedText} t={t} />
                       </div>
                     ) : (
                       <div className="px-4 py-2.5 text-[15px] whitespace-pre-wrap leading-relaxed">{msg.decryptedText}</div>
@@ -527,7 +569,8 @@ export default function App() {
             <div className={`flex-1 flex items-center justify-between bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 animate-pulse`}>
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 bg-red-500 rounded-full" style={{ animation: 'pulse-red 1.5s infinite' }}></div>
-                <span className="text-red-400 font-mono text-sm tracking-widest font-bold">RECORDING SECURE AUDIO...</span>
+                <span className="text-red-400 font-mono text-sm tracking-widest font-bold hidden sm:block">RECORDING SECURE AUDIO...</span>
+                <span className="text-red-400 font-mono text-sm tracking-widest font-bold sm:hidden">RECORDING...</span>
               </div>
               <span className="text-red-400 font-mono text-sm font-bold">{formatTime(recordingTime)} / 1:00</span>
             </div>
