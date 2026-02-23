@@ -25,7 +25,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// --- Web Crypto API ---
+// --- Web Crypto & Helpers ---
 const deriveKey = async (password, salt) => {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
@@ -51,7 +51,6 @@ const decryptText = async (base64, password) => {
   } catch (e) { return null; }
 };
 
-// --- Markdown Parser ---
 const parseMarkdown = (text) => {
   if (!text) return { __html: "" };
   let html = text
@@ -62,7 +61,6 @@ const parseMarkdown = (text) => {
   return { __html: html };
 };
 
-// --- Media Converters & Players ---
 const compressImage = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader(); reader.readAsDataURL(file);
@@ -114,20 +112,17 @@ const CustomAudioPlayer = ({ src, t }) => {
   const audioRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-
   const togglePlay = (e) => {
     e.stopPropagation();
     if (isPlaying) audioRef.current.pause();
     else audioRef.current.play();
     setIsPlaying(!isPlaying);
   };
-
   const handleTimeUpdate = () => {
     const current = audioRef.current.currentTime;
     const total = audioRef.current.duration;
     setProgress(total ? (current / total) * 100 : 0);
   };
-
   return (
     <div className={`flex items-center gap-3 px-3 py-2 bg-black/40 rounded-xl border border-white/5 w-[200px] sm:w-[250px]`}>
       <button onClick={togglePlay} className={`w-8 h-8 flex items-center justify-center rounded-full ${t.bgLight} ${t.text} hover:opacity-80 transition-all shrink-0`}>
@@ -141,7 +136,7 @@ const CustomAudioPlayer = ({ src, t }) => {
   );
 };
 
-// --- Themes & Emojis ---
+// --- Themes ---
 const themeStyles = {
   cyberpunk: { name: 'Cyberpunk', text: 'text-cyan-400', border: 'border-cyan-500/30', ring: 'focus:ring-cyan-400', bgLight: 'bg-cyan-500/10', btnGrad: 'from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500', sendBtn: 'from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500', msgMine: 'from-cyan-600/30 to-blue-600/20 border-cyan-500/30 text-cyan-50', glow: 'shadow-[0_0_15px_rgba(6,182,212,0.2)]', title: 'text-[#00ff41] drop-shadow-[0_0_10px_rgba(0,255,65,0.4)]', activeTab: 'bg-cyan-500/20 border-cyan-500/50 text-white' },
   matrix: { name: 'Matrix', text: 'text-green-400', border: 'border-green-500/30', ring: 'focus:ring-green-400', bgLight: 'bg-green-500/10', btnGrad: 'from-green-700 to-green-500 hover:from-green-600 hover:to-green-400', sendBtn: 'from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500', msgMine: 'from-green-600/30 to-emerald-600/20 border-green-500/30 text-green-50', glow: 'shadow-[0_0_15px_rgba(34,197,94,0.2)]', title: 'text-green-500 drop-shadow-[0_0_10px_rgba(34,197,94,0.4)]', activeTab: 'bg-green-500/20 border-green-500/50 text-white' },
@@ -175,7 +170,9 @@ const AuthScreen = ({ t }) => {
     setLoading(true);
     try {
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, phantomEmail, password);
+        const userCred = await signInWithEmailAndPassword(auth, phantomEmail, password);
+        // Update presence on login
+        await updateDoc(doc(db, 'users', userCred.user.uid), { lastSeen: Date.now() });
       } else {
         const userCredential = await createUserWithEmailAndPassword(auth, phantomEmail, password);
         const finalName = displayName.trim() || agentId.trim();
@@ -244,15 +241,14 @@ const MessageItem = ({
 }) => {
   const activeTouch = useRef({ startX: 0, timer: null, isLongPress: false });
   const [isExpiring, setIsExpiring] = useState(false);
-  const [isHidden, setIsHidden] = useState(false); // Fully hide after animation
+  const [isHidden, setIsHidden] = useState(false);
 
-  // Auto-Burn 5-second vanishing animation timer
   useEffect(() => {
     if (msg.expiresAt) {
       const checkExpiry = () => {
         const timeLeft = msg.expiresAt - Date.now();
         if (timeLeft <= 5000 && timeLeft > 0) setIsExpiring(true);
-        if (timeLeft <= 0) setIsHidden(true); // Failsafe for DOM removal gap
+        if (timeLeft <= 0) setIsHidden(true);
       };
       checkExpiry();
       const timer = setInterval(checkExpiry, 1000);
@@ -268,7 +264,6 @@ const MessageItem = ({
     ? (isConsecutive ? 'rounded-2xl rounded-tr-md' : 'rounded-2xl rounded-tr-sm') 
     : (isConsecutive ? 'rounded-2xl rounded-tl-md' : 'rounded-2xl rounded-tl-sm');
 
-  // Dynamic Z-Index to prevent reaction clipping
   const zIndexClass = reactionPicker === msg.id ? 'z-[100]' : 'z-10';
 
   return (
@@ -283,7 +278,7 @@ const MessageItem = ({
       </div>
 
       {reactionPicker === msg.id && (
-        <div className={`absolute ${isMine ? 'right-0' : 'left-0'} ${index < 3 ? 'top-full mt-2' : 'bottom-full mb-2'} bg-[#1a1a24]/95 border border-white/10 rounded-2xl p-3 z-[200] w-[270px] max-h-48 overflow-y-auto custom-scrollbar glass-picker animate-pop-in`} onClick={e => e.stopPropagation()}>
+        <div className={`absolute ${isMine ? 'right-0' : 'left-0'} ${index < 3 ? 'top-full mt-2' : 'bottom-full mb-2'} bg-[#1a1a24]/95 border border-white/10 rounded-2xl p-3 z-[300] w-[270px] max-h-48 overflow-y-auto custom-scrollbar glass-picker animate-pop-in`} onClick={e => e.stopPropagation()}>
           <div className="grid grid-cols-6 gap-1">{REACTION_EMOJIS.map(emoji => (<button key={emoji} onClick={() => toggleReaction(msg.id, msg.reactions, emoji)} className="w-9 h-9 hover:bg-white/10 rounded-lg text-xl transition-all hover:scale-110">{emoji}</button>))}</div>
         </div>
       )}
@@ -323,15 +318,16 @@ const MessageItem = ({
           <div className="px-4 py-3 text-xs opacity-50"><Lock className="w-3.5 h-3.5 inline mr-1"/> BLOCKED/INVALID KEY</div>
         )}
       
-        {hasReactions && (
-          <div className={`absolute -bottom-3 ${isMine ? 'right-2' : 'left-2'} flex flex-wrap gap-1 z-[60] animate-pop-in`}>
-            {Object.entries(msg.reactions).map(([emoji, users]) => (<button key={emoji} onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, msg.reactions, emoji); }} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] border shadow-md transition-all active:scale-95 hover:scale-105 ${users.includes(user.uid) ? `${t.bgLight} ${t.border} ${t.text}` : 'bg-[#1a1a24] border-white/10 text-slate-300'}`}><span>{emoji}</span>{users.length > 1 && <span>{users.length}</span>}</button>))}
+        {/* Adjusted Read Tick - Now neatly inside the message container on mobile */}
+        {isMine && !isGroup && (
+          <div className="flex items-center justify-end gap-1 mt-1 px-2 pb-0.5 opacity-80">
+            {isRead ? <CheckCheck className="w-3.5 h-3.5 text-cyan-400" /> : <Check className="w-3.5 h-3.5 text-slate-400" />}
           </div>
         )}
 
-        {isMine && !isGroup && (
-          <div className={`absolute -right-5 bottom-1 ${isRead ? 'text-cyan-400' : 'text-slate-500'}`}>
-            {isRead ? <CheckCheck className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+        {hasReactions && (
+          <div className={`absolute -bottom-3 ${isMine ? 'right-2' : 'left-2'} flex flex-wrap gap-1 z-[60] animate-pop-in`}>
+            {Object.entries(msg.reactions).map(([emoji, users]) => (<button key={emoji} onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, msg.reactions, emoji); }} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] border shadow-md transition-all active:scale-95 hover:scale-105 ${users.includes(user.uid) ? `${t.bgLight} ${t.border} ${t.text}` : 'bg-[#1a1a24] border-white/10 text-slate-300'}`}><span>{emoji}</span>{users.length > 1 && <span>{users.length}</span>}</button>))}
           </div>
         )}
       </div>
@@ -359,6 +355,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
 
+  // Typing state management (Debounced)
+  const isTypingLocal = useRef(false);
+  const typingTimeoutRef = useRef(null);
+
   // Burn Modal States
   const [showBurnModal, setShowBurnModal] = useState(false);
   const [burnText, setBurnText] = useState('');
@@ -372,7 +372,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const mediaChunksRef = useRef([]);
-  const recordingTimerRef = useRef(null);
 
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -385,6 +384,18 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   let memberCount = chatData.participants?.length || 0;
   
   const otherUserId = isGroup ? null : chatData.participants.find(id => id !== user.uid);
+
+  // Determine who is typing
+  let someoneIsTyping = false;
+  let typingName = '';
+  if (chatData.typing) {
+    const typists = Object.keys(chatData.typing).filter(id => id !== user.uid && chatData.typing[id]);
+    if (typists.length > 0) {
+      someoneIsTyping = true;
+      const typistObj = usersList.find(u => u.uid === typists[0]);
+      typingName = typistObj ? typistObj.displayName : 'Agent';
+    }
+  }
 
   if (isGroup) {
     chatName = chatData.name || "Group Server";
@@ -402,7 +413,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     }
   }, [threadId, user, messages.length]); 
 
-  // Smart Scrolling Logic
   useEffect(() => {
     if (messages.length > prevMsgCount.current) {
       setTimeout(() => {
@@ -415,7 +425,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'chat_threads', threadId, 'messages'), async (snapshot) => {
       let raw = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
       const now = Date.now();
       const validRaw = [];
       raw.forEach(msg => {
@@ -425,7 +434,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           validRaw.push(msg);
         }
       });
-      
       validRaw.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
       const videoGroups = {};
       const normalMessages = [];
@@ -459,23 +467,33 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       }
 
       const combinedRaw = [...normalMessages, ...assembledVideos].sort((a, b) => a.timestamp - b.timestamp);
-
       const processed = await Promise.all(combinedRaw.map(async (msg) => {
         if (msg.type === 'video_loading') return { ...msg, isDecrypted: true };
-        
         let decrypted = null;
         for (const k of encryptionKeys) {
           decrypted = await decryptText(msg.text, k);
           if (decrypted !== null) break;
         }
-
         return { ...msg, decryptedText: decrypted, isDecrypted: decrypted !== null };
       }));
-
       setMessages(processed);
     });
     return () => unsubscribe();
   }, [threadId, encryptionKeys]);
+
+  // Optimized Typing Handler (Debounced)
+  const handleTypingChange = (e) => {
+    setInputText(e.target.value);
+    if (!isTypingLocal.current && e.target.value.trim() !== '') {
+      isTypingLocal.current = true;
+      updateDoc(doc(db, 'chat_threads', threadId), { [`typing.${user.uid}`]: true }).catch(()=>{});
+    }
+    clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      isTypingLocal.current = false;
+      updateDoc(doc(db, 'chat_threads', threadId), { [`typing.${user.uid}`]: false }).catch(()=>{});
+    }, 2000);
+  };
 
   const handleRenameChat = async (e) => {
     e.preventDefault();
@@ -492,6 +510,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     const replyId = replyingTo ? replyingTo.id : null; setReplyingTo(null);
     const activeKey = encryptionKeys[encryptionKeys.length - 1];
 
+    // Clear typing indicator immediately on send
+    clearTimeout(typingTimeoutRef.current);
+    if (isTypingLocal.current) {
+      isTypingLocal.current = false;
+      updateDoc(doc(db, 'chat_threads', threadId), { [`typing.${user.uid}`]: false }).catch(()=>{});
+    }
+
     try {
       const enc = await encryptText(txt, activeKey);
       await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
@@ -499,10 +524,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         text: enc, type: 'text', timestamp: Date.now(), replyToId: replyId, reactions: {}, expiresAt: null
       });
       await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
+      await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() }); // Presence pulse
     } catch (err) { console.error(err); }
   };
 
-  // Modified to handle override expiry duration (for Burn Files)
   const processAndSendMedia = async (file, burnOverride = null) => {
     if (!file || !user) return;
     setIsUploading(true);
@@ -533,6 +558,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           });
         }
         await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
+        await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() });
 
       } else if (file.type.startsWith('image/')) {
         setUploadText("Compressing...");
@@ -542,6 +568,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           expiresAt: expiryTimestamp
         });
         await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
+        await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() });
       }
     } catch (err) { alert("Failed to send media."); } finally { setIsUploading(false); setUploadText(''); }
   };
@@ -563,15 +590,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           expiresAt: expiryTimestamp
         });
         await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
+        await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() });
       } catch (err) { console.error(err); }
     }
 
-    if (burnFile) {
-      await processAndSendMedia(burnFile, burnDuration);
-    }
+    if (burnFile) await processAndSendMedia(burnFile, burnDuration);
     
-    setBurnText('');
-    setBurnFile(null);
+    setBurnText(''); setBurnFile(null);
   };
 
   const handleDragEnter = (e) => {
@@ -618,6 +643,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
             expiresAt: null
           });
           await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
+          await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() });
           setReplyingTo(null);
         } catch (error) { alert("Failed to send audio."); }
         setIsUploading(false); setUploadText('');
@@ -756,7 +782,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
               {chatName} <PenLine className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" />
             </h2>
             <p className="text-[10px] text-green-400 flex items-center gap-1">
-              <Lock className="w-3 h-3" /> {isGroup ? `${memberCount} Agents` : 'E2E Encrypted'}
+              {someoneIsTyping ? (
+                 <span className={`${t.text} animate-pulse font-bold`}>{typingName} is typing...</span>
+              ) : (
+                <>
+                  <Lock className="w-3 h-3" /> {isGroup ? `${memberCount} Agents` : 'E2E Encrypted'}
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -778,7 +810,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         </div>
       )}
 
-      {/* MAPPED COMPONENT INSTEAD OF DIRECT LOOP */}
+      {/* MAPPED COMPONENT */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col custom-scrollbar min-h-0">
         {filteredMessages.length === 0 ? <div className="flex-1 flex flex-col items-center justify-center text-slate-500 opacity-50"><ShieldCheck className="w-16 h-16 mb-4" /><p className="text-sm">{searchQuery ? 'No matches found.' : 'Secure channel established.'}</p></div> : 
         filteredMessages.map((msg, index) => {
@@ -787,7 +819,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           const hasReactions = msg.reactions && Object.keys(msg.reactions).length > 0;
           const isRead = !isGroup && chatData.lastRead && chatData.lastRead[otherUserId] >= msg.timestamp;
 
-          // Message Grouping check (5 min threshold for consecutive check)
           const prevMsg = index > 0 ? filteredMessages[index - 1] : null;
           const isConsecutive = prevMsg && prevMsg.senderId === msg.senderId && (msg.timestamp - prevMsg.timestamp < 300000);
 
@@ -841,7 +872,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
             </div>
           ) : (
             <form onSubmit={handleSendText} className="flex-1 relative">
-              <input type="text" value={inputText} onChange={e => setInputText(e.target.value)} placeholder={"Secure message..."} className={`w-full bg-black/50 border border-white/10 rounded-xl py-3 px-4 text-sm ${t.ring} focus:ring-1 outline-none transition-all placeholder:text-slate-600`} />
+              <input type="text" value={inputText} onChange={handleTypingChange} placeholder={"Secure message..."} className={`w-full bg-black/50 border border-white/10 rounded-xl py-3 px-4 text-sm ${t.ring} focus:ring-1 outline-none transition-all placeholder:text-slate-600`} />
             </form>
           )}
           {isRecording ? (
@@ -864,7 +895,10 @@ export default function App() {
   const [activeChat, setActiveChat] = useState(null);
   const [encryptionKeys, setEncryptionKeys] = useState([]); 
   
-  const [themeMode, setThemeMode] = useState('cyberpunk');
+  // Initialize theme from localStorage
+  const [themeMode, setThemeMode] = useState(() => {
+    return localStorage.getItem('commslink_theme') || 'cyberpunk';
+  });
   const t = themeStyles[themeMode];
   
   const [showKeyModal, setShowKeyModal] = useState(false);
@@ -883,7 +917,12 @@ export default function App() {
   const [copiedId, setCopiedId] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => { setUser(currentUser); });
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => { 
+      setUser(currentUser); 
+      if (currentUser) {
+         await updateDoc(doc(db, 'users', currentUser.uid), { lastSeen: Date.now() }).catch(()=>{});
+      }
+    });
     return () => unsubscribe();
   }, []);
 
@@ -917,7 +956,9 @@ export default function App() {
 
   const toggleTheme = () => {
     const modes = Object.keys(themeStyles);
-    setThemeMode(modes[(modes.indexOf(themeMode) + 1) % modes.length]);
+    const nextMode = modes[(modes.indexOf(themeMode) + 1) % modes.length];
+    setThemeMode(nextMode);
+    localStorage.setItem('commslink_theme', nextMode);
   };
 
   const handleLogout = () => { signOut(auth); setActiveChat(null); };
@@ -1089,7 +1130,6 @@ export default function App() {
     }
     .animate-glitch-in { animation: glitchIn 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; }
 
-    /* New Clean Vanishing Animation */
     .vanishing {
       animation: vanish 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
       pointer-events: none;
@@ -1224,6 +1264,7 @@ export default function App() {
               const isGroup = thread.isGroup;
               let chatName = "Unknown";
               let chatAvatar = null;
+              let isOnline = false;
               
               if (isGroup) {
                 chatName = thread.name || "Group Server";
@@ -1232,6 +1273,10 @@ export default function App() {
                 const otherUserAgent = usersList.find(u => u.uid === otherUserId);
                 chatName = thread.customName || otherUserAgent?.displayName || thread.participantNames[otherUserId] || 'Unknown Agent';
                 chatAvatar = otherUserAgent?.avatarData || null;
+                // Check if user was active in the last 5 minutes (300000ms)
+                if (otherUserAgent && otherUserAgent.lastSeen && Date.now() - otherUserAgent.lastSeen < 300000) {
+                  isOnline = true;
+                }
               }
 
               const hasLocalKey = !!JSON.parse(localStorage.getItem('commslink_keys') || '{}')[thread.id];
@@ -1239,8 +1284,9 @@ export default function App() {
 
               return (
                 <button key={thread.id} onClick={() => triggerChatEntry(thread)} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all group text-left ${isActive ? 'bg-white/10 border border-white/5' : 'bg-transparent hover:bg-white/5 border border-transparent'}`}>
-                  <div className={`w-11 h-11 rounded-full bg-black/50 border ${isActive ? t.border : 'border-white/10'} flex items-center justify-center shrink-0 overflow-hidden`}>
+                  <div className={`w-11 h-11 rounded-full relative bg-black/50 border ${isActive ? t.border : 'border-white/10'} flex items-center justify-center shrink-0 overflow-hidden`}>
                     {isGroup ? <Users className={`w-4 h-4 ${isActive ? t.text : 'text-slate-400'}`} /> : (chatAvatar ? <img src={chatAvatar} className="w-full h-full object-cover" /> : <User className={`w-4 h-4 ${isActive ? t.text : 'text-slate-400'}`} />)}
+                    {isOnline && !isGroup && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-[#0a0a0f] rounded-full shadow-[0_0_5px_rgba(34,197,94,0.5)]"></div>}
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <h4 className={`font-bold truncate text-sm ${isActive ? 'text-white' : 'text-slate-300'}`}>{chatName}</h4>
