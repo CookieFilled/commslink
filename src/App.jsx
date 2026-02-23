@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from 'firebase/auth';
-import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, getDoc, deleteDoc, updateDoc, query, where, getDocs, arrayUnion } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, getDoc, deleteDoc, updateDoc, query, where, getDocs, arrayUnion, orderBy, limit } from 'firebase/firestore';
 import { 
   Lock, Unlock, Send, Key, MessageSquare, ShieldAlert, 
   ShieldCheck, LogOut, User, Loader2, Check, Users, 
   Palette, Reply, X, Smile, Mic, Square, Play, Pause, 
   ChevronLeft, Fingerprint, Search, Plus, Trash2, Settings, 
   Camera, PenLine, RefreshCw, Copy, Paperclip, CheckCheck, Flame, Clock, ChevronDown, Image as ImageIcon,
-  ArrowDown, Sticker
+  ArrowDown, Sticker, Edit2
 } from 'lucide-react';
 
 // --- Firebase Initialization ---
@@ -55,14 +55,17 @@ const decryptText = async (base64, password) => {
 const parseMarkdown = (text) => {
   if (!text) return { __html: "" };
   let html = text
+    .replace(/</g, "&lt;").replace(/>/g, "&gt;") // Sanitize HTML first
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>')
     .replace(/~(.*?)~/g, '<del>$1</del>')
-    .replace(/`(.*?)`/g, '<code class="bg-black/40 px-1.5 py-0.5 rounded text-cyan-400 font-mono text-[13px] border border-white/5 break-words">$1</code>');
+    .replace(/`(.*?)`/g, '<code class="bg-black/40 px-1.5 py-0.5 rounded text-cyan-400 font-mono text-[13px] border border-white/5 break-words">$1</code>')
+    // Linkifier: Finds URLs not already inside an href and makes them clickable
+    .replace(/(?<!href=")(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-400 underline hover:text-blue-300 break-all" onclick="event.stopPropagation()">$1</a>');
   return { __html: html };
 };
 
-// Sticker Generator (Square Crop & Tiny WebP)
+// Sticker Generator
 const createStickerFromImage = (base64Str) => {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -257,8 +260,8 @@ const AuthScreen = ({ t }) => {
 // --- 2. THE INDIVIDUAL MESSAGE COMPONENT ---
 const MessageItem = ({ 
   msg, index, isMine, isGroup, isConsecutive, repliedMsg, hasReactions, isRead, 
-  user, t, themeMode, toggleReaction, reactionPicker, setReactionPicker, 
-  setReplyingTo, setZoomedImage, saveSticker, showDayDivider, dayString 
+  user, t, themeMode, toggleReaction, activeMenu, setActiveMenu, 
+  setReplyingTo, setZoomedImage, saveSticker, showDayDivider, dayString, startEditing, deleteMessage 
 }) => {
   const activeTouch = useRef({ startX: 0, timer: null, isLongPress: false });
   const [isExpiring, setIsExpiring] = useState(false);
@@ -284,11 +287,19 @@ const MessageItem = ({
   const borderRadius = isMine 
     ? (isConsecutive ? 'rounded-2xl rounded-tr-md' : 'rounded-2xl rounded-tr-sm') 
     : (isConsecutive ? 'rounded-2xl rounded-tl-md' : 'rounded-2xl rounded-tl-sm');
-  const zIndexClass = reactionPicker === msg.id ? 'z-[100]' : 'z-10';
+  const zIndexClass = activeMenu === msg.id ? 'z-[100]' : 'z-10';
   const msgTime = formatTime(msg.timestamp);
 
-  // Sticker Logic
   const isSticker = msg.type === 'sticker';
+
+  // Extract YouTube IDs for rendering player
+  let ytIds = [];
+  if (msg.isDecrypted && msg.type === 'text') {
+    const ytRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/gi;
+    let match;
+    while ((match = ytRegex.exec(msg.decryptedText)) !== null) { ytIds.push(match[1]); }
+    ytIds = [...new Set(ytIds)];
+  }
 
   return (
     <>
@@ -301,23 +312,35 @@ const MessageItem = ({
       )}
       
       <div className={`flex flex-col max-w-[85%] md:max-w-[70%] relative group ${isMine ? 'self-end items-end' : 'self-start items-start'} ${bubbleSpacing} ${entryAnimationClass} ${isExpiring ? 'vanishing' : ''} ${zIndexClass}`}
-        onTouchStart={e => { activeTouch.current.startX = e.targetTouches[0].clientX; activeTouch.current.isLongPress = false; activeTouch.current.timer = setTimeout(() => { activeTouch.current.isLongPress = true; if(navigator.vibrate) navigator.vibrate(40); setReactionPicker(msg.id); }, 450); }}
+        onTouchStart={e => { activeTouch.current.startX = e.targetTouches[0].clientX; activeTouch.current.isLongPress = false; activeTouch.current.timer = setTimeout(() => { activeTouch.current.isLongPress = true; if(navigator.vibrate) navigator.vibrate(40); setActiveMenu(msg.id); }, 450); }}
         onTouchMove={() => clearTimeout(activeTouch.current.timer)}
         onTouchEnd={e => { clearTimeout(activeTouch.current.timer); if (!activeTouch.current.isLongPress && e.changedTouches[0].clientX - activeTouch.current.startX > 60) setReplyingTo(msg); }}
       >
-        {/* Hover / Long Press Menu */}
+        {/* Hover / Long Press Menu Trigger (Desktop) */}
         <div className={`hidden md:flex absolute top-1/2 -translate-y-1/2 ${isMine ? 'right-full pr-3' : 'left-full pl-3'} items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none group-hover:pointer-events-auto z-10`}>
-          <button onClick={(e) => { e.stopPropagation(); setReactionPicker(msg.id === reactionPicker ? null : msg.id); }} className={`p-2 bg-[#1a1a24] border border-white/10 ${t.text} rounded-full hover:bg-white/10 shadow-lg transition-transform hover:scale-110`} title="React"><Smile className="w-4 h-4" /></button>
-          <button onClick={() => setReplyingTo(msg)} className={`p-2 bg-[#1a1a24] border border-white/10 ${t.text} rounded-full hover:bg-white/10 shadow-lg transition-transform hover:scale-110`} title="Reply"><Reply className="w-4 h-4" /></button>
-          {/* Sticker Converter Button */}
-          {msg.isDecrypted && msg.type === 'image' && (
-            <button onClick={() => saveSticker(msg.decryptedText)} className={`p-2 bg-[#1a1a24] border border-white/10 text-orange-400 rounded-full hover:bg-white/10 shadow-lg transition-transform hover:scale-110`} title="Save as Sticker"><Sticker className="w-4 h-4" /></button>
-          )}
+          <button onClick={(e) => { e.stopPropagation(); setActiveMenu(msg.id === activeMenu ? null : msg.id); }} className={`p-2 bg-[#1a1a24] border border-white/10 ${t.text} rounded-full hover:bg-white/10 shadow-lg transition-transform hover:scale-110`} title="Actions"><Smile className="w-4 h-4" /></button>
         </div>
 
-        {reactionPicker === msg.id && (
-          <div className={`absolute ${isMine ? 'right-0' : 'left-0'} ${index < 3 ? 'top-full mt-2' : 'bottom-full mb-2'} bg-[#1a1a24]/95 border border-white/10 rounded-2xl p-3 z-[300] w-[270px] max-h-48 overflow-y-auto custom-scrollbar glass-picker animate-pop-in`} onClick={e => e.stopPropagation()}>
-            <div className="grid grid-cols-6 gap-1">{REACTION_EMOJIS.map(emoji => (<button key={emoji} onClick={() => toggleReaction(msg.id, msg.reactions, emoji)} className="w-9 h-9 hover:bg-white/10 rounded-lg text-xl transition-all hover:scale-110">{emoji}</button>))}</div>
+        {/* Master Action Menu (Mobile & Desktop) */}
+        {activeMenu === msg.id && (
+          <div className={`absolute ${isMine ? 'right-0' : 'left-0'} ${index < 3 ? 'top-full mt-2' : 'bottom-full mb-2'} bg-[#1a1a24]/95 border border-white/10 rounded-2xl p-3 z-[300] w-[270px] shadow-2xl glass-picker animate-pop-in`} onClick={e => e.stopPropagation()}>
+            {/* Actions Row */}
+            <div className="flex justify-around mb-3 border-b border-white/10 pb-2">
+              <button onClick={() => { setReplyingTo(msg); setActiveMenu(null); }} className="p-2 hover:bg-white/10 rounded-lg text-slate-300" title="Reply"><Reply className="w-4 h-4"/></button>
+              {msg.isDecrypted && msg.type === 'image' && (
+                <button onClick={() => { saveSticker(msg.decryptedText); setActiveMenu(null); }} className="p-2 hover:bg-white/10 rounded-lg text-orange-400" title="Save as Sticker"><Sticker className="w-4 h-4"/></button>
+              )}
+              {isMine && msg.type === 'text' && (
+                <button onClick={() => { startEditing(msg); setActiveMenu(null); }} className="p-2 hover:bg-white/10 rounded-lg text-blue-400" title="Edit"><Edit2 className="w-4 h-4"/></button>
+              )}
+              {isMine && (
+                <button onClick={() => { deleteMessage(msg.id); setActiveMenu(null); }} className="p-2 hover:bg-red-500/20 rounded-lg text-red-400" title="Delete"><Trash2 className="w-4 h-4"/></button>
+              )}
+            </div>
+            {/* Emojis */}
+            <div className="grid grid-cols-6 gap-1 max-h-32 overflow-y-auto custom-scrollbar">
+              {REACTION_EMOJIS.map(emoji => (<button key={emoji} onClick={() => toggleReaction(msg.id, msg.reactions, emoji)} className="w-9 h-9 hover:bg-white/10 rounded-lg text-xl transition-all hover:scale-110">{emoji}</button>))}
+            </div>
           </div>
         )}
 
@@ -338,7 +361,7 @@ const MessageItem = ({
               </div>
            </div>
         ) : (
-          <div className={`p-1.5 shadow-lg relative max-w-full ${borderRadius} ${msg.isDecrypted ? isMine ? `bg-gradient-to-br ${msg.expiresAt ? 'from-orange-600/30 to-red-600/20 border-orange-500/30 text-orange-50' : t.msgMine} border` : 'bg-[#1a1a24] border border-white/10 text-slate-200' : 'bg-red-900/20 border border-red-500/30 text-red-300'}`}>
+          <div className={`p-1.5 shadow-lg relative max-w-full w-full ${borderRadius} ${msg.isDecrypted ? isMine ? `bg-gradient-to-br ${msg.expiresAt ? 'from-orange-600/30 to-red-600/20 border-orange-500/30 text-orange-50' : t.msgMine} border` : 'bg-[#1a1a24] border border-white/10 text-slate-200' : 'bg-red-900/20 border border-red-500/30 text-red-300'}`}>
             {repliedMsg && repliedMsg.isDecrypted && (
               <div className="mb-2 p-2 bg-black/30 rounded border-l-2 border-cyan-500/50 text-xs opacity-80 select-none overflow-hidden text-ellipsis">
                 <span className={`font-bold ${t.text}`}>{repliedMsg.senderName}</span>
@@ -360,7 +383,14 @@ const MessageItem = ({
               ) : msg.type === 'audio' ? (
                  <CustomAudioPlayer src={msg.decryptedText} t={t} /> 
               ) : (
-                 <div className="px-3 py-2 text-[15px] whitespace-pre-wrap break-words overflow-wrap-anywhere leading-relaxed" dangerouslySetInnerHTML={parseMarkdown(msg.decryptedText)}></div>
+                <div className="px-3 py-2 text-[15px] whitespace-pre-wrap break-words overflow-wrap-anywhere leading-relaxed">
+                   <div dangerouslySetInnerHTML={parseMarkdown(msg.decryptedText)}></div>
+                   {ytIds.length > 0 && ytIds.map(id => (
+                     <div key={id} className="mt-3 w-full rounded-xl overflow-hidden border border-white/10 bg-black/50 aspect-video">
+                       <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${id}`} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
+                     </div>
+                   ))}
+                </div>
               )
             ) : (
               <div className="px-4 py-3 text-xs opacity-50"><Lock className="w-3.5 h-3.5 inline mr-1"/> BLOCKED/INVALID KEY</div>
@@ -368,7 +398,9 @@ const MessageItem = ({
           
             {/* Timestamp & Ticks Corner */}
             <div className={`flex items-center justify-end gap-1 mt-1 px-1 opacity-70`}>
-              <span className="text-[9px] font-mono tracking-wider text-slate-300">{msgTime}</span>
+              <span className="text-[9px] font-mono tracking-wider text-slate-300">
+                {msgTime} {msg.isEdited && <span className="italic opacity-60 ml-0.5">(edited)</span>}
+              </span>
               {isMine && !isGroup && (isRead ? <CheckCheck className="w-3.5 h-3.5 text-cyan-400" /> : <Check className="w-3.5 h-3.5 text-slate-400" />)}
             </div>
 
@@ -395,14 +427,18 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const [isUploading, setIsUploading] = useState(false);
   const [uploadText, setUploadText] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
+  const [editingMsg, setEditingMsg] = useState(null);
   const [zoomedImage, setZoomedImage] = useState(null);
-  const [reactionPicker, setReactionPicker] = useState(null);
+  const [activeMenu, setActiveMenu] = useState(null);
   
   const [isEditingName, setIsEditingName] = useState(false);
   const [newChatName, setNewChatName] = useState('');
 
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
+
+  // Pagination State
+  const [msgLimit, setMsgLimit] = useState(30);
 
   // Cache & Typing
   const isTypingLocal = useRef(false);
@@ -430,6 +466,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const mediaChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
 
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -462,25 +499,22 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     chatAvatar = otherUserAgent?.avatarData || null;
   }
 
+  useEffect(() => { setMsgLimit(30); setEditingMsg(null); setReplyingTo(null); setInputText(''); }, [threadId]);
   useEffect(() => { decryptionCache.current = {}; }, [encryptionKeys]);
 
   useEffect(() => {
     if (threadId && user && messages.length > 0) {
-      // Only mark as read if user is at the bottom
       if (!showScrollButton) {
         updateDoc(doc(db, 'chat_threads', threadId), { [`lastRead.${user.uid}`]: Date.now() }).catch(()=>{});
       }
     }
   }, [threadId, user, messages.length, showScrollButton]); 
 
-  // Smart Scrolling Logic & Unread Tracking
   useEffect(() => {
     if (messages.length > prevMsgCount.current) {
       if (showScrollButton && prevMsgCount.current > 0) {
-        // Someone sent a message while we were scrolling up
         setUnreadCount(prev => prev + (messages.length - prevMsgCount.current));
       } else {
-        // We are at the bottom, auto-scroll down
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
       }
     }
@@ -489,13 +523,14 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   const handleScroll = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.target;
-    // If user scrolls up more than 100px from the bottom
     const isScrolledUp = scrollHeight - scrollTop - clientHeight > 100;
     setShowScrollButton(isScrolledUp);
+    
     if (!isScrolledUp) {
-       setUnreadCount(0); // Reset when hitting bottom
+       setUnreadCount(0);
        if (messages.length > 0) updateDoc(doc(db, 'chat_threads', threadId), { [`lastRead.${user.uid}`]: Date.now() }).catch(()=>{});
     }
+    if (scrollTop === 0) setMsgLimit(prevLimit => prevLimit + 30);
   };
 
   const scrollToBottom = () => {
@@ -505,7 +540,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   };
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'chat_threads', threadId, 'messages'), async (snapshot) => {
+    const q = query(collection(db, 'chat_threads', threadId, 'messages'), orderBy('timestamp', 'desc'), limit(msgLimit));
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
       let raw = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       const now = Date.now();
       const validRaw = [];
@@ -542,6 +578,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       
       const processed = await Promise.all(combinedRaw.map(async (msg) => {
         if (msg.type === 'video_loading') return { ...msg, isDecrypted: true };
+        // Clear cache if msg was edited
+        if (decryptionCache.current[msg.id] && msg.isEdited && decryptionCache.current[`${msg.id}_edited`] !== msg.text) {
+           delete decryptionCache.current[msg.id];
+        }
         if (decryptionCache.current[msg.id]) return { ...msg, decryptedText: decryptionCache.current[msg.id], isDecrypted: true };
 
         let decrypted = null;
@@ -550,13 +590,16 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           if (decrypted !== null) break;
         }
 
-        if (decrypted !== null) decryptionCache.current[msg.id] = decrypted;
+        if (decrypted !== null) {
+          decryptionCache.current[msg.id] = decrypted;
+          if(msg.isEdited) decryptionCache.current[`${msg.id}_edited`] = msg.text;
+        }
         return { ...msg, decryptedText: decrypted, isDecrypted: decrypted !== null };
       }));
       setMessages(processed);
     });
     return () => unsubscribe();
-  }, [threadId, encryptionKeys]);
+  }, [threadId, encryptionKeys, msgLimit]);
 
   const handleTypingChange = (e) => {
     setInputText(e.target.value);
@@ -592,14 +635,24 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
     try {
       const enc = await encryptText(txt, activeKey);
-      await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
-        senderId: user.uid, senderName: user.displayName, text: enc, type: 'text', timestamp: Date.now(), replyToId: replyId, reactions: {}, expiresAt: null
-      });
+      
+      if (editingMsg) {
+        await updateDoc(doc(db, 'chat_threads', threadId, 'messages', editingMsg.id), { text: enc, isEdited: true });
+        setEditingMsg(null);
+      } else {
+        await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
+          senderId: user.uid, senderName: user.displayName, text: enc, type: 'text', timestamp: Date.now(), replyToId: replyId, reactions: {}, expiresAt: null, isEdited: false
+        });
+      }
+      
       await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
       await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() }); 
-      scrollToBottom();
+      if(!editingMsg) scrollToBottom();
     } catch (err) { console.error(err); }
   };
+
+  const startEditing = (msg) => { setEditingMsg(msg); setReplyingTo(null); setInputText(msg.decryptedText); if (fileInputRef.current) fileInputRef.current.value = ''; };
+  const deleteMessage = async (msgId) => { try { await deleteDoc(doc(db, 'chat_threads', threadId, 'messages', msgId)); } catch(err) { alert("Failed to delete message."); } };
 
   const handleSendSticker = async (webpBase64) => {
     setShowStickerPicker(false);
@@ -611,8 +664,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       });
       await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
       await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() });
-      setReplyingTo(null);
-      scrollToBottom();
+      setReplyingTo(null); scrollToBottom();
     } catch (err) { alert("Failed to deploy sticker."); }
   };
 
@@ -675,7 +727,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     try {
       const webpStr = await createStickerFromImage(base64Str);
       let newVault = [webpStr, ...savedStickers];
-      // Keep only last 20
       if (newVault.length > 20) newVault = newVault.slice(0, 20);
       setSavedStickers(newVault);
       localStorage.setItem('commslink_stickers', JSON.stringify(newVault));
@@ -725,7 +776,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const stopRecording = () => { if (mediaRecorderRef.current && isRecording) { mediaRecorderRef.current.stop(); setIsRecording(false); clearInterval(recordingTimerRef.current); } };
 
   const toggleReaction = async (msgId, currentReactions = {}, emoji) => {
-    setReactionPicker(null);
+    setActiveMenu(null);
     const emojiUsers = currentReactions[emoji] || [];
     const hasReacted = emojiUsers.includes(user.uid);
     let newEmojiUsers = hasReacted ? emojiUsers.filter(id => id !== user.uid) : [...emojiUsers, user.uid];
@@ -741,7 +792,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const burnTimeOptions = [ { label: '1 Minute', val: 60000 }, { label: '5 Minutes', val: 300000 }, { label: '1 Hour', val: 3600000 }, { label: '24 Hours', val: 86400000 } ];
 
   return (
-    <div className="flex-1 flex flex-col relative bg-[#050508] min-h-0 overflow-x-hidden" onClick={() => { setReactionPicker(null); setIsTimeDropdownOpen(false); setShowStickerPicker(false); }} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
+    <div className="flex-1 flex flex-col relative bg-[#050508] min-h-0 overflow-x-hidden" onClick={() => { setActiveMenu(null); setIsTimeDropdownOpen(false); setShowStickerPicker(false); }} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
       {isDragging && (
         <div className="absolute inset-0 z-[200] bg-black/60 backdrop-blur-sm m-4 rounded-2xl border-2 border-dashed border-cyan-500 flex items-center justify-center pointer-events-none transition-all animate-fade-in">
           <div className="bg-[#1a1a24] p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 animate-pop-in">
@@ -861,7 +912,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           const prevMsg = index > 0 ? filteredMessages[index - 1] : null;
           const isConsecutive = prevMsg && prevMsg.senderId === msg.senderId && (msg.timestamp - prevMsg.timestamp < 300000);
           
-          // Chronos Day Dividers
           let showDayDivider = false; let dayString = '';
           if (index === 0) { showDayDivider = true; dayString = formatDay(msg.timestamp); }
           else if (!isSameDay(prevMsg.timestamp, msg.timestamp)) { showDayDivider = true; dayString = formatDay(msg.timestamp); }
@@ -871,16 +921,15 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
               key={msg.id} index={index} msg={msg} isMine={isMine} isGroup={isGroup} 
               isConsecutive={isConsecutive} repliedMsg={repliedMsg} hasReactions={hasReactions} 
               isRead={isRead} user={user} t={t} themeMode={themeMode} toggleReaction={toggleReaction} 
-              reactionPicker={reactionPicker} setReactionPicker={setReactionPicker} 
+              activeMenu={activeMenu} setActiveMenu={setActiveMenu} 
               setReplyingTo={setReplyingTo} setZoomedImage={setZoomedImage} saveSticker={saveStickerToVault}
-              showDayDivider={showDayDivider} dayString={dayString}
+              showDayDivider={showDayDivider} dayString={dayString} startEditing={startEditing} deleteMessage={deleteMessage}
             />
           );
         })}
         <div ref={messagesEndRef} className="h-4" />
       </div>
 
-      {/* Go To Bottom Floating Action Button */}
       {showScrollButton && (
         <button onClick={scrollToBottom} className={`absolute bottom-20 right-4 p-3 rounded-full bg-gradient-to-r ${t.sendBtn} text-white shadow-[0_0_15px_rgba(0,0,0,0.8)] border border-white/20 transition-all hover:scale-110 z-40 animate-pop-in group`}>
           <ArrowDown className="w-5 h-5 group-hover:animate-bounce" />
@@ -904,12 +953,22 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           </div>
         )}
 
+        {editingMsg && (
+          <div className="px-6 py-3 bg-[#1a1a24]/90 border-b border-blue-500/30 flex items-center justify-between text-sm animate-bouncy-slide-up origin-bottom shadow-[0_-10px_20px_rgba(0,0,0,0.3)]">
+            <div className="flex flex-col border-l-2 border-blue-500 pl-3">
+              <span className={`text-xs font-bold text-blue-400`}>Editing Message</span>
+              <span className="text-slate-400 text-xs truncate max-w-[200px] mt-0.5">{editingMsg.decryptedText}</span>
+            </div>
+            <button onClick={() => { setEditingMsg(null); setInputText(''); }} className="p-2 text-slate-400 hover:text-red-400 bg-white/5 rounded-full"><X className="w-4 h-4" /></button>
+          </div>
+        )}
+
         {/* Sticker Vault Popup */}
         {showStickerPicker && (
           <div className="p-4 bg-[#1a1a24] border-b border-white/5 h-48 overflow-y-auto custom-scrollbar animate-slide-up origin-bottom" onClick={e => e.stopPropagation()}>
             <h4 className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 px-1">Your Sticker Vault</h4>
             {savedStickers.length === 0 ? (
-              <p className="text-sm text-slate-500 italic px-1">Vault empty. Hover over a photo and click the sticker icon to save.</p>
+              <p className="text-sm text-slate-500 italic px-1">Vault empty. Long press a photo and click the sticker icon to save.</p>
             ) : (
               <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3">
                 {savedStickers.map((stk, i) => (
@@ -930,15 +989,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
                 } 
               }} />
               <button onClick={() => fileInputRef.current?.click()} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Paperclip className="w-5 h-5" /></button>
-              <button 
-  onClick={(e) => { 
-    e.stopPropagation(); 
-    setShowStickerPicker(!showStickerPicker); 
-  }} 
-  className={`p-2 sm:p-2.5 ${showStickerPicker ? t.text : 'text-slate-400'} hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}
->
-  <Sticker className="w-5 h-5" />
-</button>
+              <button onClick={(e) => { e.stopPropagation(); setShowStickerPicker(!showStickerPicker); }} className={`p-2 sm:p-2.5 ${showStickerPicker ? t.text : 'text-slate-400'} hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Sticker className="w-5 h-5" /></button>
               <button onClick={startRecording} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Mic className="w-5 h-5" /></button>
             </div>
           )}
@@ -1026,6 +1077,17 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
+  // Hook into History API for Mobile Back Button
+  useEffect(() => {
+    const handlePopState = (e) => {
+      if (activeChat) {
+        setActiveChat(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [activeChat]);
+
   const toggleTheme = () => {
     const modes = Object.keys(themeStyles);
     const nextMode = modes[(modes.indexOf(themeMode) + 1) % modes.length];
@@ -1063,8 +1125,14 @@ export default function App() {
     try {
       const safeGroupId = groupNameInput.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
       const groupRef = doc(db, 'chat_threads', safeGroupId); const groupSnap = await getDoc(groupRef);
-      if (groupSnap.exists()) { if (!groupSnap.data().participants.includes(user.uid)) await updateDoc(groupRef, { participants: arrayUnion(user.uid) }); } 
-      else await setDoc(groupRef, { isGroup: true, name: groupNameInput.trim(), participants: [user.uid], createdAt: Date.now(), lastActivity: Date.now() });
+      if (groupSnap.exists()) { 
+        if (!groupSnap.data().participants.includes(user.uid)) {
+          await updateDoc(groupRef, { participants: arrayUnion(user.uid) }); 
+        }
+      } else {
+        await setDoc(groupRef, { isGroup: true, name: groupNameInput.trim(), participants: [user.uid], createdAt: Date.now(), lastActivity: Date.now() });
+        alert(`Successfully created new server: ${groupNameInput.trim()}`);
+      }
       setGroupNameInput(''); triggerChatEntry({ id: safeGroupId, isGroup: true, name: groupNameInput.trim() });
     } catch (err) { alert("Failed to connect to group."); }
     setIsSearching(false);
@@ -1087,7 +1155,12 @@ export default function App() {
 
   const triggerChatEntry = (thread) => {
     let keys = JSON.parse(localStorage.getItem('commslink_keys') || '{}')[thread.id];
-    if (keys) { if (typeof keys === 'string') keys = [keys]; setEncryptionKeys(keys); setActiveChat(thread); } 
+    if (keys) { 
+      if (typeof keys === 'string') keys = [keys]; 
+      setEncryptionKeys(keys); 
+      setActiveChat(thread);
+      window.history.pushState({ chat: thread.id }, ''); 
+    } 
     else { setTargetThread(thread); setTempKey(''); setShowKeyModal(true); }
   };
 
@@ -1099,7 +1172,10 @@ export default function App() {
     let currentKeys = savedKeys[targetThread.id] || []; if (typeof currentKeys === 'string') currentKeys = [currentKeys];
     if (!currentKeys.includes(tempKey.trim())) currentKeys.push(tempKey.trim());
     savedKeys[targetThread.id] = currentKeys; localStorage.setItem('commslink_keys', JSON.stringify(savedKeys));
-    setEncryptionKeys(currentKeys); setActiveChat(targetThread); setShowKeyModal(false);
+    setEncryptionKeys(currentKeys); 
+    setActiveChat(targetThread); 
+    setShowKeyModal(false);
+    window.history.pushState({ chat: targetThread.id }, '');
   };
 
   const handleDeleteChat = async (threadId, isGroup) => {
@@ -1111,7 +1187,7 @@ export default function App() {
           if (newParticipants.length === 0) await deleteDoc(groupRef); else await updateDoc(groupRef, { participants: newParticipants });
         } else await deleteDoc(doc(db, 'chat_threads', threadId));
         const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}'); delete savedKeys[threadId];
-        localStorage.setItem('commslink_keys', JSON.stringify(savedKeys)); if (activeChat?.id === threadId) setActiveChat(null);
+        localStorage.setItem('commslink_keys', JSON.stringify(savedKeys)); if (activeChat?.id === threadId) window.history.back();
       } catch (err) { alert("Action failed."); }
     }
   };
@@ -1153,7 +1229,6 @@ export default function App() {
   if (user === null) return <><style>{globalStyles}</style><AuthScreen t={t} /></>;
 
   return (
-    // Note the h-[100dvh] here to prevent squashing!
     <div className="flex h-[100dvh] w-full bg-[#050508] text-slate-200 overflow-hidden font-sans">
       <style>{globalStyles}</style>
 
@@ -1227,7 +1302,7 @@ export default function App() {
         <div className="p-4 border-b border-white/5 shrink-0 bg-[#0c0c12]">
           <div className="flex gap-1 mb-3 bg-black/40 p-1 rounded-lg border border-white/5">
             <button onClick={() => setConnectMode('agent')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${connectMode === 'agent' ? t.activeTab : 'text-slate-500 hover:text-slate-300'}`}>Agent Link</button>
-            <button onClick={() => setConnectMode('group')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${connectMode === 'group' ? t.activeTab : 'text-slate-500 hover:text-slate-300'}`}>Server Join</button>
+            <button onClick={() => setConnectMode('group')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${connectMode === 'group' ? t.activeTab : 'text-slate-500 hover:text-slate-300'}`}>Servers</button>
           </div>
           {connectMode === 'agent' ? (
             <form onSubmit={handleSearchAndCreateChat} className="flex gap-2">
@@ -1238,12 +1313,12 @@ export default function App() {
               <button type="submit" disabled={isSearching || !searchAgentId.trim()} className={`bg-gradient-to-r ${t.sendBtn} text-white px-3 rounded-lg disabled:opacity-50 shrink-0`}><Plus className="w-4 h-4" /></button>
             </form>
           ) : (
-            <form onSubmit={handleGroupJoin} className="flex gap-2">
-              <div className="relative flex-1 group flex items-center">
+            <form onSubmit={handleGroupJoin} className="flex flex-col gap-2">
+              <div className="relative group flex items-center">
                 <input type="text" value={groupNameInput} onChange={(e) => setGroupNameInput(e.target.value)} placeholder="Server Name..." className={`w-full bg-black/50 border border-white/10 rounded-lg py-2 pl-3 pr-8 text-sm ${t.ring} focus:ring-1 outline-none transition-all`} />
                 <button type="button" onClick={generateRandomGroup} className="absolute right-2 p-1 text-slate-500 hover:text-white" title="Random Server"><RefreshCw className="w-3 h-3" /></button>
               </div>
-              <button type="submit" disabled={isSearching || !groupNameInput.trim()} className={`bg-gradient-to-r ${t.sendBtn} text-white px-3 rounded-lg disabled:opacity-50 shrink-0`}><Users className="w-4 h-4" /></button>
+              <button type="submit" disabled={isSearching || !groupNameInput.trim()} className={`w-full bg-gradient-to-r ${t.sendBtn} py-2 text-white text-sm font-bold rounded-lg disabled:opacity-50 shrink-0`}>Create / Join Server</button>
             </form>
           )}
         </div>
@@ -1285,7 +1360,7 @@ export default function App() {
       {/* RIGHT MAIN CHAT AREA */}
       <div className={`${!activeChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col relative bg-[#050508] min-h-0`}>
         {activeChat ? (
-          <ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={chatThreads.find(th => th.id === activeChat.id) || activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => setActiveChat(null)} deleteChat={handleDeleteChat} t={t} themeMode={themeMode} />
+          <ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={chatThreads.find(th => th.id === activeChat.id) || activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => window.history.back()} deleteChat={handleDeleteChat} t={t} themeMode={themeMode} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-500/40 relative">
              <div className="absolute inset-0 bg-center bg-no-repeat bg-contain opacity-5" style={{ backgroundImage: "url('data:image/svg+xml;utf8,<svg width=\"100\" height=\"100\" viewBox=\"0 0 100 100\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M50 20L80 40V70L50 90L20 70V40L50 20Z\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>')" }}></div>
