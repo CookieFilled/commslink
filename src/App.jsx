@@ -171,7 +171,6 @@ const AuthScreen = ({ t }) => {
     try {
       if (isLogin) {
         const userCred = await signInWithEmailAndPassword(auth, phantomEmail, password);
-        // Update presence on login
         await updateDoc(doc(db, 'users', userCred.user.uid), { lastSeen: Date.now() });
       } else {
         const userCredential = await createUserWithEmailAndPassword(auth, phantomEmail, password);
@@ -318,7 +317,6 @@ const MessageItem = ({
           <div className="px-4 py-3 text-xs opacity-50"><Lock className="w-3.5 h-3.5 inline mr-1"/> BLOCKED/INVALID KEY</div>
         )}
       
-        {/* Adjusted Read Tick - Now neatly inside the message container on mobile */}
         {isMine && !isGroup && (
           <div className="flex items-center justify-end gap-1 mt-1 px-2 pb-0.5 opacity-80">
             {isRead ? <CheckCheck className="w-3.5 h-3.5 text-cyan-400" /> : <Check className="w-3.5 h-3.5 text-slate-400" />}
@@ -355,11 +353,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
 
-  // Typing state management (Debounced)
   const isTypingLocal = useRef(false);
   const typingTimeoutRef = useRef(null);
+  const decryptionCache = useRef({}); // MASSIVE SPEED FIX: Caches decrypted keys
 
-  // Burn Modal States
   const [showBurnModal, setShowBurnModal] = useState(false);
   const [burnText, setBurnText] = useState('');
   const [burnFile, setBurnFile] = useState(null);
@@ -375,7 +372,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
-
   const prevMsgCount = useRef(0);
 
   const isGroup = chatData.isGroup;
@@ -385,7 +381,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   
   const otherUserId = isGroup ? null : chatData.participants.find(id => id !== user.uid);
 
-  // Determine who is typing
   let someoneIsTyping = false;
   let typingName = '';
   if (chatData.typing) {
@@ -404,6 +399,11 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     chatName = chatData.customName || otherUserAgent?.displayName || 'Unknown Agent';
     chatAvatar = otherUserAgent?.avatarData || null;
   }
+
+  // Clear cache if encryption keys change
+  useEffect(() => {
+    decryptionCache.current = {};
+  }, [encryptionKeys]);
 
   useEffect(() => {
     if (threadId && user && messages.length > 0) {
@@ -467,12 +467,23 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       }
 
       const combinedRaw = [...normalMessages, ...assembledVideos].sort((a, b) => a.timestamp - b.timestamp);
+      
       const processed = await Promise.all(combinedRaw.map(async (msg) => {
         if (msg.type === 'video_loading') return { ...msg, isDecrypted: true };
+        
+        // SPEED FIX: Return from cache immediately to prevent 15-second lag
+        if (decryptionCache.current[msg.id]) {
+           return { ...msg, decryptedText: decryptionCache.current[msg.id], isDecrypted: true };
+        }
+
         let decrypted = null;
         for (const k of encryptionKeys) {
           decrypted = await decryptText(msg.text, k);
           if (decrypted !== null) break;
+        }
+
+        if (decrypted !== null) {
+           decryptionCache.current[msg.id] = decrypted;
         }
         return { ...msg, decryptedText: decrypted, isDecrypted: decrypted !== null };
       }));
@@ -481,7 +492,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     return () => unsubscribe();
   }, [threadId, encryptionKeys]);
 
-  // Optimized Typing Handler (Debounced)
   const handleTypingChange = (e) => {
     setInputText(e.target.value);
     if (!isTypingLocal.current && e.target.value.trim() !== '') {
@@ -510,7 +520,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     const replyId = replyingTo ? replyingTo.id : null; setReplyingTo(null);
     const activeKey = encryptionKeys[encryptionKeys.length - 1];
 
-    // Clear typing indicator immediately on send
     clearTimeout(typingTimeoutRef.current);
     if (isTypingLocal.current) {
       isTypingLocal.current = false;
@@ -524,7 +533,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         text: enc, type: 'text', timestamp: Date.now(), replyToId: replyId, reactions: {}, expiresAt: null
       });
       await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
-      await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() }); // Presence pulse
+      await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() }); 
     } catch (err) { console.error(err); }
   };
 
@@ -595,7 +604,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     }
 
     if (burnFile) await processAndSendMedia(burnFile, burnDuration);
-    
     setBurnText(''); setBurnFile(null);
   };
 
@@ -695,7 +703,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         </div>
       )}
 
-      {/* Burn Modal */}
       {showBurnModal && (
         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-pop-in" onClick={e => e.stopPropagation()}>
@@ -729,7 +736,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
                   </>
                 )}
 
-                {/* Custom Styled Dropdown for Burn Timer */}
                 <div className="relative flex-1">
                   <div onClick={() => setIsTimeDropdownOpen(!isTimeDropdownOpen)} className="flex items-center justify-between bg-black/40 p-3 rounded-xl border border-white/5 cursor-pointer hover:border-white/20 transition-all">
                     <div className="flex items-center gap-2 text-slate-200 text-sm"><Clock className="w-4 h-4 text-slate-400" /> {burnTimeOptions.find(o => o.val === Number(burnDuration))?.label}</div>
@@ -810,7 +816,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         </div>
       )}
 
-      {/* MAPPED COMPONENT */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col custom-scrollbar min-h-0">
         {filteredMessages.length === 0 ? <div className="flex-1 flex flex-col items-center justify-center text-slate-500 opacity-50"><ShieldCheck className="w-16 h-16 mb-4" /><p className="text-sm">{searchQuery ? 'No matches found.' : 'Secure channel established.'}</p></div> : 
         filteredMessages.map((msg, index) => {
@@ -895,7 +900,6 @@ export default function App() {
   const [activeChat, setActiveChat] = useState(null);
   const [encryptionKeys, setEncryptionKeys] = useState([]); 
   
-  // Initialize theme from localStorage
   const [themeMode, setThemeMode] = useState(() => {
     return localStorage.getItem('commslink_theme') || 'cyberpunk';
   });
@@ -1110,7 +1114,6 @@ export default function App() {
     }
   };
 
-  // --- GLOBAL STYLES ---
   const globalStyles = `
     @keyframes popIn { 0% { opacity: 0; transform: translateY(10px) scale(0.98); } 100% { opacity: 1; transform: translateY(0) scale(1); } } 
     .animate-pop-in { animation: popIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } 
@@ -1273,7 +1276,6 @@ export default function App() {
                 const otherUserAgent = usersList.find(u => u.uid === otherUserId);
                 chatName = thread.customName || otherUserAgent?.displayName || thread.participantNames[otherUserId] || 'Unknown Agent';
                 chatAvatar = otherUserAgent?.avatarData || null;
-                // Check if user was active in the last 5 minutes (300000ms)
                 if (otherUserAgent && otherUserAgent.lastSeen && Date.now() - otherUserAgent.lastSeen < 300000) {
                   isOnline = true;
                 }
@@ -1305,7 +1307,8 @@ export default function App() {
       {/* ================= RIGHT MAIN CHAT AREA ================= */}
       <div className={`${!activeChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col relative bg-[#050508] min-h-0`}>
         {activeChat ? (
-          <ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => setActiveChat(null)} deleteChat={handleDeleteChat} t={t} themeMode={themeMode} />
+          // PASSING LIVE SYNCED CHAT DATA TO FIX TYPING & TICKS
+          <ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={chatThreads.find(t => t.id === activeChat.id) || activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => setActiveChat(null)} deleteChat={handleDeleteChat} t={t} themeMode={themeMode} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-500/40 relative">
              <div className="absolute inset-0 bg-center bg-no-repeat bg-contain opacity-5" style={{ backgroundImage: "url('data:image/svg+xml;utf8,<svg width=\"100\" height=\"100\" viewBox=\"0 0 100 100\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M50 20L80 40V70L50 90L20 70V40L50 20Z\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>')" }}></div>
