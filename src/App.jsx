@@ -7,7 +7,7 @@ import {
   ShieldCheck, LogOut, User, Loader2, Check, Users, 
   Palette, Reply, X, Smile, Mic, Square, Play, Pause, 
   ChevronLeft, Fingerprint, Search, Plus, Trash2, Settings, 
-  Camera, PenLine, RefreshCw, Copy, Paperclip, CheckCheck, Flame
+  Camera, PenLine, RefreshCw, Copy, Paperclip, CheckCheck, Flame, Clock
 } from 'lucide-react';
 
 // --- Firebase Initialization ---
@@ -236,9 +236,111 @@ const AuthScreen = ({ t }) => {
   );
 };
 
-// --- 2. THE CHAT INTERFACE (RIGHT PANE) ---
-// Note the new encryptionKeys prop (Array) instead of a single string
-const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, goBack, changeKey, deleteChat, t }) => {
+// --- 2. THE INDIVIDUAL MESSAGE COMPONENT (Allows per-message state for animations) ---
+const MessageItem = ({ 
+  msg, index, isMine, isGroup, isConsecutive, repliedMsg, hasReactions, isRead, 
+  user, t, themeMode, toggleReaction, reactionPicker, setReactionPicker, 
+  setReplyingTo, setZoomedImage 
+}) => {
+  const activeTouch = useRef({ startX: 0, timer: null, isLongPress: false });
+  const [isExpiring, setIsExpiring] = useState(false);
+
+  // Auto-Burn 5-second dissolution animation timer
+  useEffect(() => {
+    if (msg.expiresAt) {
+      const checkExpiry = () => {
+        const timeLeft = msg.expiresAt - Date.now();
+        if (timeLeft <= 5000 && timeLeft > 0) setIsExpiring(true);
+      };
+      checkExpiry(); // Check immediately on mount
+      const timer = setInterval(checkExpiry, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [msg.expiresAt]);
+
+  // Determine Entry Animation based on theme
+  const entryAnimationClass = themeMode === 'cyberpunk' ? 'animate-glitch-in' : 'animate-pop-in';
+
+  // Grouping visual adjustments (WhatsApp style)
+  const bubbleSpacing = isConsecutive ? 'mt-1' : 'mt-4';
+  const borderRadius = isMine 
+    ? (isConsecutive ? 'rounded-2xl rounded-tr-md' : 'rounded-2xl rounded-tr-sm') 
+    : (isConsecutive ? 'rounded-2xl rounded-tl-md' : 'rounded-2xl rounded-tl-sm');
+
+  return (
+    <div className={`flex flex-col max-w-[85%] md:max-w-[70%] relative group ${isMine ? 'self-end items-end' : 'self-start items-start'} ${bubbleSpacing} ${entryAnimationClass}`}
+      onTouchStart={e => { activeTouch.current.startX = e.targetTouches[0].clientX; activeTouch.current.isLongPress = false; activeTouch.current.timer = setTimeout(() => { activeTouch.current.isLongPress = true; if(navigator.vibrate) navigator.vibrate(40); setReactionPicker(msg.id); }, 450); }}
+      onTouchMove={() => clearTimeout(activeTouch.current.timer)}
+      onTouchEnd={e => { clearTimeout(activeTouch.current.timer); if (!activeTouch.current.isLongPress && e.changedTouches[0].clientX - activeTouch.current.startX > 60) setReplyingTo(msg); }}
+    >
+      <div className={`hidden md:flex absolute top-1/2 -translate-y-1/2 ${isMine ? 'right-full pr-3' : 'left-full pl-3'} items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none group-hover:pointer-events-auto z-10`}>
+        <button onClick={(e) => { e.stopPropagation(); setReactionPicker(msg.id === reactionPicker ? null : msg.id); }} className={`p-2 bg-[#1a1a24] border border-white/10 ${t.text} rounded-full hover:bg-white/10 shadow-lg transition-transform hover:scale-110`}><Smile className="w-4 h-4" /></button>
+        <button onClick={() => setReplyingTo(msg)} className={`p-2 bg-[#1a1a24] border border-white/10 ${t.text} rounded-full hover:bg-white/10 shadow-lg transition-transform hover:scale-110`}><Reply className="w-4 h-4" /></button>
+      </div>
+
+      {reactionPicker === msg.id && (
+        <div className={`absolute ${isMine ? 'right-0' : 'left-0'} ${index < 3 ? 'top-full mt-2' : 'bottom-full mb-2'} bg-[#1a1a24]/95 border border-white/10 rounded-2xl p-3 z-50 w-[270px] max-h-48 overflow-y-auto custom-scrollbar glass-picker animate-pop-in`} onClick={e => e.stopPropagation()}>
+          <div className="grid grid-cols-6 gap-1">{REACTION_EMOJIS.map(emoji => (<button key={emoji} onClick={() => toggleReaction(msg.id, msg.reactions, emoji)} className="w-9 h-9 hover:bg-white/10 rounded-lg text-xl transition-all hover:scale-110">{emoji}</button>))}</div>
+        </div>
+      )}
+
+      {/* Hide sender name & burn info if consecutive to save space */}
+      {!isConsecutive && (
+        <div className="flex items-center gap-2 mb-1">
+          {!isMine && isGroup && <span className="text-[10px] text-slate-500 ml-1">{msg.senderName}</span>}
+          {msg.expiresAt && <span className="text-[10px] text-orange-400 flex items-center gap-0.5"><Flame className="w-3 h-3"/> Burns soon</span>}
+        </div>
+      )}
+
+      {/* The main message bubble - applies burning-out animation natively */}
+      <div className={`p-1.5 shadow-lg relative transition-all duration-1000 ${isExpiring ? 'burning-out' : ''} ${borderRadius} ${msg.isDecrypted ? isMine ? `bg-gradient-to-br ${msg.expiresAt ? 'from-orange-600/30 to-red-600/20 border-orange-500/30 text-orange-50' : t.msgMine} border` : 'bg-[#1a1a24] border border-white/10 text-slate-200' : 'bg-red-900/20 border border-red-500/30 text-red-300'}`}>
+        {repliedMsg && repliedMsg.isDecrypted && (
+          <div className="mb-2 p-2 bg-black/30 rounded border-l-2 border-cyan-500/50 text-xs opacity-80 select-none">
+            <span className={`font-bold ${t.text}`}>{repliedMsg.senderName}</span>
+            <span className="truncate block max-w-[200px] mt-0.5">{repliedMsg.type === 'text' ? repliedMsg.decryptedText : `📷 Media`}</span>
+          </div>
+        )}
+        
+        {msg.isDecrypted ? (
+          msg.type === 'image' ? (
+             <img src={msg.decryptedText} onClick={() => setZoomedImage(msg.decryptedText)} className="max-w-full rounded-xl cursor-zoom-in border border-white/5" style={{maxHeight:'350px'}} /> 
+          ) : msg.type === 'video' ? (
+             <video controls src={msg.decryptedText} className="max-w-full rounded-xl shadow-md border border-white/10" style={{maxHeight:'350px'}} />
+          ) : msg.type === 'video_loading' ? (
+             <div className="px-4 py-3 flex flex-col gap-2 min-w-[200px]">
+                <div className={`flex items-center gap-2 font-bold mb-1 border-b border-white/10 pb-2 text-xs ${t.text}`}><Loader2 className="w-3.5 h-3.5 animate-spin" /> ASSEMBLING DATA...</div>
+                <div className="w-full bg-black/50 h-1.5 rounded-full overflow-hidden"><div className={`h-full bg-gradient-to-r ${t.sendBtn} transition-all duration-300`} style={{width: `${(msg.progress/msg.total)*100}%`}}></div></div>
+                <span className="opacity-50 text-[10px] text-right">Packets: {msg.progress} / {msg.total}</span>
+             </div>
+          ) : msg.type === 'audio' ? (
+             <CustomAudioPlayer src={msg.decryptedText} t={t} /> 
+          ) : (
+             <div className="px-4 py-2.5 text-[15px] whitespace-pre-wrap leading-relaxed" dangerouslySetInnerHTML={parseMarkdown(msg.decryptedText)}></div>
+          )
+        ) : (
+          <div className="px-4 py-3 text-xs opacity-50"><Lock className="w-3.5 h-3.5 inline mr-1"/> BLOCKED/INVALID KEY</div>
+        )}
+      
+        {hasReactions && (
+          <div className={`absolute -bottom-3 ${isMine ? 'right-2' : 'left-2'} flex flex-wrap gap-1 z-10 animate-pop-in`}>
+            {Object.entries(msg.reactions).map(([emoji, users]) => (<button key={emoji} onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, msg.reactions, emoji); }} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] border shadow-md transition-all active:scale-95 hover:scale-105 ${users.includes(user.uid) ? `${t.bgLight} ${t.border} ${t.text}` : 'bg-[#1a1a24] border-white/10 text-slate-300'}`}><span>{emoji}</span>{users.length > 1 && <span>{users.length}</span>}</button>))}
+          </div>
+        )}
+
+        {/* Read Receipt */}
+        {isMine && !isGroup && (
+          <div className={`absolute -right-5 bottom-1 ${isRead ? 'text-cyan-400' : 'text-slate-500'}`}>
+            {isRead ? <CheckCheck className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+// --- 3. THE CHAT INTERFACE (RIGHT PANE) ---
+const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, goBack, changeKey, deleteChat, t, themeMode }) => {
   const [messages, setMessages] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -253,7 +355,12 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const [isEditingName, setIsEditingName] = useState(false);
   const [newChatName, setNewChatName] = useState('');
 
-  const [burnTimer, setBurnTimer] = useState(0); 
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounter = useRef(0);
+
+  const [showBurnModal, setShowBurnModal] = useState(false);
+  const [burnText, setBurnText] = useState('');
+  const [burnDuration, setBurnDuration] = useState(300000); 
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -264,9 +371,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
-  const activeTouch = useRef({ startX: 0, timer: null, isLongPress: false });
 
-  // SCROLL BUG FIX: Track previous message length to only scroll on new messages
   const prevMsgCount = useRef(0);
 
   const isGroup = chatData.isGroup;
@@ -284,7 +389,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     chatAvatar = otherUserAgent?.avatarData || null;
   }
 
-  // Update read receipts
   useEffect(() => {
     if (threadId && user && messages.length > 0) {
       updateDoc(doc(db, 'chat_threads', threadId), { 
@@ -293,15 +397,16 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     }
   }, [threadId, user, messages.length]); 
 
-  // Smart Scrolling Logic (The Fix)
+  // Smart Scrolling Logic
   useEffect(() => {
     if (messages.length > prevMsgCount.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
     }
     prevMsgCount.current = messages.length;
   }, [messages.length]);
 
-  // Fetch, Assemble, Auto-Burn, and Key-Ring Decrypt
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'chat_threads', threadId, 'messages'), async (snapshot) => {
       let raw = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -354,7 +459,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         if (msg.type === 'video_loading') return { ...msg, isDecrypted: true };
         
         let decrypted = null;
-        // The Key Ring in action: Try all saved keys for this room until one works
         for (const k of encryptionKeys) {
           decrypted = await decryptText(msg.text, k);
           if (decrypted !== null) break;
@@ -382,7 +486,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     const txt = inputText; setInputText('');
     const replyId = replyingTo ? replyingTo.id : null; setReplyingTo(null);
     
-    // Always use the latest key added to the keychain
     const activeKey = encryptionKeys[encryptionKeys.length - 1];
 
     try {
@@ -390,7 +493,26 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
         senderId: user.uid, senderName: user.displayName, 
         text: enc, type: 'text', timestamp: Date.now(), replyToId: replyId, reactions: {},
-        expiresAt: burnTimer ? Date.now() + burnTimer : null
+        expiresAt: null
+      });
+      await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
+    } catch (err) { console.error(err); }
+  };
+
+  const handleSendBurnMessage = async (e) => {
+    e.preventDefault(); if (!burnText.trim() || !user) return;
+    const txt = burnText;
+    setBurnText('');
+    setShowBurnModal(false);
+    
+    const activeKey = encryptionKeys[encryptionKeys.length - 1];
+
+    try {
+      const enc = await encryptText(txt, activeKey);
+      await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
+        senderId: user.uid, senderName: user.displayName, 
+        text: enc, type: 'text', timestamp: Date.now(), replyToId: null, reactions: {},
+        expiresAt: Date.now() + Number(burnDuration)
       });
       await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
     } catch (err) { console.error(err); }
@@ -421,7 +543,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
             senderId: user.uid, senderName: user.displayName, 
             type: 'video_chunk', videoGroupId, chunkIndex: i, totalChunks, 
             text: chunkText, timestamp: Date.now() + i, replyToId: replyId, reactions: {},
-            expiresAt: burnTimer ? Date.now() + burnTimer : null
+            expiresAt: null
           });
         }
         await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
@@ -431,11 +553,29 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         const b64 = await compressImage(file); const enc = await encryptText(b64, activeKey);
         await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
           senderId: user.uid, senderName: user.displayName, text: enc, type: 'image', timestamp: Date.now(), replyToId: replyId, reactions: {},
-          expiresAt: burnTimer ? Date.now() + burnTimer : null
+          expiresAt: null
         });
         await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
       }
     } catch (err) { alert("Failed to send media."); } finally { setIsUploading(false); setUploadText(''); }
+  };
+
+  const handleDragEnter = (e) => {
+    e.preventDefault(); e.stopPropagation(); dragCounter.current++;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) setIsDragging(true);
+  };
+  const handleDragLeave = (e) => {
+    e.preventDefault(); e.stopPropagation(); dragCounter.current--;
+    if (dragCounter.current === 0) setIsDragging(false);
+  };
+  const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); };
+  const handleDrop = (e) => {
+    e.preventDefault(); e.stopPropagation(); setIsDragging(false); dragCounter.current = 0;
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { alert("Only images and videos are allowed."); return; }
+      processAndSendMedia(file);
+    }
   };
 
   const startRecording = async () => {
@@ -448,7 +588,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       mediaChunksRef.current = [];
-
       const activeKey = encryptionKeys[encryptionKeys.length - 1];
 
       mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) mediaChunksRef.current.push(e.data); };
@@ -462,7 +601,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           const base64Audio = await blobToBase64(blob); const encAudio = await encryptText(base64Audio, activeKey);
           await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
             senderId: user.uid, senderName: user.displayName, text: encAudio, type: 'audio', timestamp: Date.now(), replyToId: replyingTo ? replyingTo.id : null, reactions: {},
-            expiresAt: burnTimer ? Date.now() + burnTimer : null
+            expiresAt: null
           });
           await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
           setReplyingTo(null);
@@ -471,9 +610,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       };
 
       mediaRecorder.start(); setIsRecording(true);
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingTime((prev) => { if (prev >= 59) { stopRecording(); return 0; } return prev + 1; });
-      }, 1000);
+      recordingTimerRef.current = setInterval(() => { setRecordingTime((prev) => { if (prev >= 59) { stopRecording(); return 0; } return prev + 1; }); }, 1000);
     } catch (error) { alert("Mic access denied."); }
   };
 
@@ -489,21 +626,52 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     await updateDoc(doc(db, 'chat_threads', threadId, 'messages', msgId), { reactions: updatedReactions });
   };
 
-  const cycleBurnTimer = () => {
-    if (burnTimer === 0) setBurnTimer(300000); // 5 mins
-    else if (burnTimer === 300000) setBurnTimer(3600000); // 1 hour
-    else setBurnTimer(0); // Off
-  };
-
   const filteredMessages = searchQuery.trim() 
     ? messages.filter(m => m.isDecrypted && m.type === 'text' && m.decryptedText?.toLowerCase().includes(searchQuery.toLowerCase()))
     : messages;
 
   return (
-    <div className="flex-1 flex flex-col relative bg-[#050508]" onClick={() => setReactionPicker(null)}>
+    <div className="flex-1 flex flex-col relative bg-[#050508] min-h-0" onClick={() => setReactionPicker(null)} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
+      {isDragging && (
+        <div className="absolute inset-0 z-[200] bg-black/60 backdrop-blur-sm m-4 rounded-2xl border-2 border-dashed border-cyan-500 flex items-center justify-center pointer-events-none transition-all animate-fade-in">
+          <div className="bg-[#1a1a24] p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 animate-pop-in">
+            <Paperclip className={`w-12 h-12 ${t.text} animate-bounce`} />
+            <h2 className={`text-xl font-bold font-mono tracking-widest ${t.text}`}>DROP TO ENCRYPT & SEND</h2>
+            <p className="text-slate-400 text-sm">Supported formats: Images & Videos</p>
+          </div>
+        </div>
+      )}
+
       {zoomedImage && (
         <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md cursor-pointer animate-fade-in" onClick={() => setZoomedImage(null)}>
           <img src={zoomedImage} alt="Zoomed" className="max-w-full max-h-[90vh] rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+
+      {showBurnModal && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-pop-in">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-orange-500 flex items-center gap-2"><Flame className="w-5 h-5" /> Send Burn Message</h3>
+              <button onClick={() => setShowBurnModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <p className="text-xs text-slate-400 mb-4">Message securely self-destructs after the timer expires.</p>
+            <form onSubmit={handleSendBurnMessage}>
+              <textarea autoFocus required value={burnText} onChange={(e) => setBurnText(e.target.value)} placeholder="Type confidential message..." rows="4" className="w-full bg-black/50 border border-orange-500/30 rounded-xl px-4 py-3 mb-4 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 resize-none text-sm text-white custom-scrollbar"></textarea>
+              <div className="flex items-center gap-2 mb-4 bg-black/40 p-2 rounded-xl border border-white/5">
+                <Clock className="w-4 h-4 text-slate-400 ml-2" />
+                <select value={burnDuration} onChange={(e) => setBurnDuration(e.target.value)} className="w-full bg-transparent outline-none text-sm text-slate-200 cursor-pointer">
+                  <option value={60000}>1 Minute</option>
+                  <option value={300000}>5 Minutes</option>
+                  <option value={3600000}>1 Hour</option>
+                  <option value={86400000}>24 Hours</option>
+                </select>
+              </div>
+              <button type="submit" disabled={!burnText.trim()} className={`w-full py-3 rounded-xl bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white font-bold text-sm shadow-lg shadow-red-500/20 disabled:opacity-50 transition-all`}>
+                Deploy Secret
+              </button>
+            </form>
+          </div>
         </div>
       )}
 
@@ -526,11 +694,9 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       <header className="bg-[#0f0f14]/90 backdrop-blur-md border-b border-white/10 px-4 py-3 flex items-center justify-between z-30 shrink-0 shadow-md">
         <div className="flex items-center gap-3 overflow-hidden">
           <button onClick={goBack} className="md:hidden p-2 -ml-2 text-slate-400 hover:text-white rounded-full hover:bg-white/10"><ChevronLeft className="w-6 h-6" /></button>
-          
           <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${t.bgLight} border ${t.border} flex items-center justify-center ${t.glow} overflow-hidden shrink-0`}>
             {isGroup ? <Users className={`w-5 h-5 ${t.text}`} /> : (chatAvatar ? <img src={chatAvatar} className="w-full h-full object-cover" /> : <User className={`w-5 h-5 ${t.text}`} />)}
           </div>
-          
           <div className="flex flex-col truncate pr-2 group cursor-pointer" onClick={() => { setNewChatName(chatName); setIsEditingName(true); }}>
             <h2 className="font-mono text-md font-bold text-slate-100 flex items-center gap-2 truncate">
               {chatName} <PenLine className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -540,23 +706,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
             </p>
           </div>
         </div>
-        
         <div className="flex items-center gap-1">
-          {/* Key Rotation Button */}
-          <button onClick={changeKey} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-white hover:bg-white/5`} title="Update Encryption Key">
-            <Key className="w-4 h-4" />
-          </button>
-
-          <button onClick={cycleBurnTimer} className={`p-2 rounded-lg transition-all flex items-center gap-1 ${burnTimer ? 'text-orange-400 bg-orange-500/10' : 'text-slate-500 hover:text-white hover:bg-white/5'}`} title="Auto-Burn Timer">
-            <Flame className="w-4 h-4" />
-            {burnTimer === 300000 && <span className="text-[10px] font-bold">5M</span>}
-            {burnTimer === 3600000 && <span className="text-[10px] font-bold">1H</span>}
-          </button>
-          
-          <button onClick={() => { setShowSearch(!showSearch); setSearchQuery(''); }} className={`p-2 rounded-lg transition-all ${showSearch ? 'text-white bg-white/10' : 'text-slate-500 hover:text-white hover:bg-white/5'}`} title="Search Messages">
-            <Search className="w-4 h-4" />
-          </button>
-          
+          <button onClick={changeKey} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-white hover:bg-white/5`} title="Update Encryption Key"><Key className="w-4 h-4" /></button>
+          <button onClick={() => setShowBurnModal(true)} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-orange-400 hover:bg-orange-500/10`} title="Send Burn Message"><Flame className="w-4 h-4" /></button>
+          <button onClick={() => { setShowSearch(!showSearch); setSearchQuery(''); }} className={`p-2 rounded-lg transition-all ${showSearch ? 'text-white bg-white/10' : 'text-slate-500 hover:text-white hover:bg-white/5'}`} title="Search Messages"><Search className="w-4 h-4" /></button>
           <button onClick={() => deleteChat(threadId, isGroup)} className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all" title={isGroup ? "Leave Group" : "Delete Chat"}>
             {isGroup ? <LogOut className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
           </button>
@@ -571,78 +724,27 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6 custom-scrollbar">
-        {filteredMessages.length === 0 ? <div className="flex-1 flex flex-col items-center justify-center text-slate-500 opacity-50"><ShieldCheck className="w-16 h-16 mb-4" /><p className="text-sm">{searchQuery ? 'No matches found.' : 'Secure channel established.'}</p></div> : filteredMessages.map((msg, index) => {
+      {/* MAPPED COMPONENT INSTEAD OF DIRECT LOOP */}
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col custom-scrollbar min-h-0">
+        {filteredMessages.length === 0 ? <div className="flex-1 flex flex-col items-center justify-center text-slate-500 opacity-50"><ShieldCheck className="w-16 h-16 mb-4" /><p className="text-sm">{searchQuery ? 'No matches found.' : 'Secure channel established.'}</p></div> : 
+        filteredMessages.map((msg, index) => {
           const isMine = msg.senderId === user.uid;
           const repliedMsg = msg.replyToId ? messages.find(m => m.id === msg.replyToId) : null;
           const hasReactions = msg.reactions && Object.keys(msg.reactions).length > 0;
-          
           const isRead = !isGroup && chatData.lastRead && chatData.lastRead[otherUserId] >= msg.timestamp;
 
+          // Message Grouping check (5 min threshold for consecutive check)
+          const prevMsg = index > 0 ? filteredMessages[index - 1] : null;
+          const isConsecutive = prevMsg && prevMsg.senderId === msg.senderId && (msg.timestamp - prevMsg.timestamp < 300000);
+
           return (
-            <div key={msg.id} className={`flex flex-col max-w-[85%] md:max-w-[70%] relative group ${isMine ? 'self-end items-end' : 'self-start items-start'}`}
-              onTouchStart={e => { activeTouch.current.startX = e.targetTouches[0].clientX; activeTouch.current.isLongPress = false; activeTouch.current.timer = setTimeout(() => { activeTouch.current.isLongPress = true; if(navigator.vibrate) navigator.vibrate(40); setReactionPicker(msg.id); }, 450); }}
-              onTouchMove={() => clearTimeout(activeTouch.current.timer)}
-              onTouchEnd={e => { clearTimeout(activeTouch.current.timer); if (!activeTouch.current.isLongPress && e.changedTouches[0].clientX - activeTouch.current.startX > 60) setReplyingTo(msg); }}
-            >
-              <div className={`hidden md:flex absolute top-1/2 -translate-y-1/2 ${isMine ? 'right-full pr-3' : 'left-full pl-3'} items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none group-hover:pointer-events-auto z-10`}>
-                <button onClick={(e) => { e.stopPropagation(); setReactionPicker(msg.id === reactionPicker ? null : msg.id); }} className={`p-2 bg-[#1a1a24] border border-white/10 ${t.text} rounded-full hover:bg-white/10 shadow-lg transition-transform hover:scale-110`}><Smile className="w-4 h-4" /></button>
-                <button onClick={() => setReplyingTo(msg)} className={`p-2 bg-[#1a1a24] border border-white/10 ${t.text} rounded-full hover:bg-white/10 shadow-lg transition-transform hover:scale-110`}><Reply className="w-4 h-4" /></button>
-              </div>
-
-              {reactionPicker === msg.id && (
-                <div className={`absolute ${isMine ? 'right-0' : 'left-0'} ${index < 3 ? 'top-full mt-2' : 'bottom-full mb-2'} bg-[#1a1a24]/95 border border-white/10 rounded-2xl p-3 z-50 w-[270px] max-h-48 overflow-y-auto custom-scrollbar glass-picker animate-pop-in`} onClick={e => e.stopPropagation()}>
-                  <div className="grid grid-cols-6 gap-1">{REACTION_EMOJIS.map(emoji => (<button key={emoji} onClick={() => toggleReaction(msg.id, msg.reactions, emoji)} className="w-9 h-9 hover:bg-white/10 rounded-lg text-xl transition-all hover:scale-110">{emoji}</button>))}</div>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 mb-1">
-                {!isMine && isGroup && <span className="text-[10px] text-slate-500 ml-1">{msg.senderName}</span>}
-                {msg.expiresAt && <span className="text-[10px] text-orange-400 flex items-center gap-0.5"><Flame className="w-3 h-3"/> Burns soon</span>}
-              </div>
-
-              <div className={`p-1.5 rounded-2xl shadow-lg relative ${msg.isDecrypted ? isMine ? `bg-gradient-to-br ${t.msgMine} rounded-tr-sm border` : 'bg-[#1a1a24] border border-white/10 text-slate-200 rounded-tl-sm' : 'bg-red-900/20 border border-red-500/30 text-red-300 rounded-tl-sm'}`}>
-                {repliedMsg && repliedMsg.isDecrypted && (
-                  <div className="mb-2 p-2 bg-black/30 rounded border-l-2 border-cyan-500/50 text-xs opacity-80 select-none">
-                    <span className={`font-bold ${t.text}`}>{repliedMsg.senderName}</span>
-                    <span className="truncate block max-w-[200px] mt-0.5">{repliedMsg.type === 'text' ? repliedMsg.decryptedText : `📷 Media`}</span>
-                  </div>
-                )}
-                
-                {msg.isDecrypted ? (
-                  msg.type === 'image' ? (
-                     <img src={msg.decryptedText} onClick={() => setZoomedImage(msg.decryptedText)} className="max-w-full rounded-xl cursor-zoom-in border border-white/5" style={{maxHeight:'350px'}} /> 
-                  ) : msg.type === 'video' ? (
-                     <video controls src={msg.decryptedText} className="max-w-full rounded-xl shadow-md border border-white/10" style={{maxHeight:'350px'}} />
-                  ) : msg.type === 'video_loading' ? (
-                     <div className="px-4 py-3 flex flex-col gap-2 min-w-[200px]">
-                        <div className={`flex items-center gap-2 font-bold mb-1 border-b border-white/10 pb-2 text-xs ${t.text}`}><Loader2 className="w-3.5 h-3.5 animate-spin" /> ASSEMBLING DATA...</div>
-                        <div className="w-full bg-black/50 h-1.5 rounded-full overflow-hidden"><div className={`h-full bg-gradient-to-r ${t.sendBtn} transition-all duration-300`} style={{width: `${(msg.progress/msg.total)*100}%`}}></div></div>
-                        <span className="opacity-50 text-[10px] text-right">Packets: {msg.progress} / {msg.total}</span>
-                     </div>
-                  ) : msg.type === 'audio' ? (
-                     <CustomAudioPlayer src={msg.decryptedText} t={t} /> 
-                  ) : (
-                     <div className="px-4 py-2.5 text-[15px] whitespace-pre-wrap leading-relaxed" dangerouslySetInnerHTML={parseMarkdown(msg.decryptedText)}></div>
-                  )
-                ) : (
-                  <div className="px-4 py-3 text-xs opacity-50"><Lock className="w-3.5 h-3.5 inline mr-1"/> BLOCKED/INVALID KEY</div>
-                )}
-              
-                {hasReactions && (
-                  <div className={`absolute -bottom-3 ${isMine ? 'right-2' : 'left-2'} flex flex-wrap gap-1 z-10 animate-pop-in`}>
-                    {Object.entries(msg.reactions).map(([emoji, users]) => (<button key={emoji} onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, msg.reactions, emoji); }} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] border shadow-md transition-all active:scale-95 hover:scale-105 ${users.includes(user.uid) ? `${t.bgLight} ${t.border} ${t.text}` : 'bg-[#1a1a24] border-white/10 text-slate-300'}`}><span>{emoji}</span>{users.length > 1 && <span>{users.length}</span>}</button>))}
-                  </div>
-                )}
-
-                {/* Read Receipt */}
-                {isMine && !isGroup && (
-                  <div className={`absolute -right-5 bottom-1 ${isRead ? 'text-cyan-400' : 'text-slate-500'}`}>
-                    {isRead ? <CheckCheck className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
-                  </div>
-                )}
-              </div>
-            </div>
+            <MessageItem 
+              key={msg.id} index={index} msg={msg} isMine={isMine} isGroup={isGroup} 
+              isConsecutive={isConsecutive} repliedMsg={repliedMsg} hasReactions={hasReactions} 
+              isRead={isRead} user={user} t={t} themeMode={themeMode} toggleReaction={toggleReaction} 
+              reactionPicker={reactionPicker} setReactionPicker={setReactionPicker} 
+              setReplyingTo={setReplyingTo} setZoomedImage={setZoomedImage}
+            />
           );
         })}
         <div ref={messagesEndRef} className="h-4" />
@@ -661,12 +763,19 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         <div className="p-3 sm:p-4 flex gap-2 relative items-center">
           {!isRecording && (
             <div className="flex items-center gap-1">
-              <input type="file" accept="image/*,video/*" className="hidden" ref={fileInputRef} onChange={(e) => { if(e.target.files[0]) { processAndSendMedia(e.target.files[0]); e.target.value=''; } }} />
+              <input type="file" accept="image/*,video/*" className="hidden" ref={fileInputRef} onChange={(e) => { 
+                if(e.target.files[0]) { 
+                  if (!e.target.files[0].type.startsWith('image/') && !e.target.files[0].type.startsWith('video/')) {
+                    alert("Only images and videos are allowed.");
+                    return;
+                  }
+                  processAndSendMedia(e.target.files[0]); e.target.value=''; 
+                } 
+              }} />
               <button onClick={() => fileInputRef.current?.click()} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Paperclip className="w-5 h-5" /></button>
               <button onClick={startRecording} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Mic className="w-5 h-5" /></button>
             </div>
           )}
-          
           {isUploading && uploadText ? (
              <div className={`flex-1 flex justify-between bg-black/50 border border-white/10 rounded-xl px-4 py-3 animate-pulse`}>
                 <span className={`font-bold tracking-widest text-xs flex items-center gap-2 ${t.text}`}><Loader2 className="w-4 h-4 animate-spin"/> {uploadText}</span>
@@ -678,14 +787,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
             </div>
           ) : (
             <form onSubmit={handleSendText} className="flex-1 relative">
-              <input type="text" value={inputText} onChange={e => setInputText(e.target.value)} placeholder={burnTimer ? "Type self-destructing message..." : "Secure message..."} className={`w-full bg-black/50 border ${burnTimer ? 'border-orange-500/50' : 'border-white/10'} rounded-xl py-3 px-4 text-sm ${t.ring} focus:ring-1 outline-none transition-all placeholder:text-slate-600`} />
+              <input type="text" value={inputText} onChange={e => setInputText(e.target.value)} placeholder={"Secure message..."} className={`w-full bg-black/50 border border-white/10 rounded-xl py-3 px-4 text-sm ${t.ring} focus:ring-1 outline-none transition-all placeholder:text-slate-600`} />
             </form>
           )}
-
           {isRecording ? (
              <button onClick={stopRecording} className="bg-red-600 hover:bg-red-500 p-3 rounded-xl text-white transition-colors shadow-lg shadow-red-500/20"><Square className="w-5 h-5 fill-current" /></button> 
           ) : (
-             <button onClick={handleSendText} disabled={(!inputText.trim() && !isUploading) || isUploading} className={`bg-gradient-to-r ${burnTimer ? 'from-orange-600 to-red-600' : t.sendBtn} p-3 rounded-xl text-white disabled:opacity-50 transition-all ${t.glow} hover:-translate-y-0.5 active:scale-95`}><Send className="w-5 h-5 ml-0.5" /></button>
+             <button onClick={handleSendText} disabled={(!inputText.trim() && !isUploading) || isUploading} className={`bg-gradient-to-r ${t.sendBtn} p-3 rounded-xl text-white disabled:opacity-50 transition-all ${t.glow} hover:-translate-y-0.5 active:scale-95`}><Send className="w-5 h-5 ml-0.5" /></button>
           )}
         </div>
       </div>
@@ -693,15 +801,14 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   );
 };
 
-
-// --- 3. MAIN APP ROUTER (SPLIT PANE UI) ---
+// --- 4. MAIN APP ROUTER (SPLIT PANE UI) ---
 export default function App() {
   const [user, setUser] = useState(null);
   const [currentUserData, setCurrentUserData] = useState(null);
   const [usersList, setUsersList] = useState([]);
   const [chatThreads, setChatThreads] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
-  const [encryptionKeys, setEncryptionKeys] = useState([]); // NOW AN ARRAY
+  const [encryptionKeys, setEncryptionKeys] = useState([]); 
   
   const [themeMode, setThemeMode] = useState('cyberpunk');
   const t = themeStyles[themeMode];
@@ -851,13 +958,12 @@ export default function App() {
     setIsSearching(false);
   };
 
-  // KEY RING LOGIC
   const triggerChatEntry = (thread) => {
     const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}');
     let keys = savedKeys[thread.id];
     
     if (keys) { 
-      if (typeof keys === 'string') keys = [keys]; // Migrate old users to arrays
+      if (typeof keys === 'string') keys = [keys];
       setEncryptionKeys(keys); 
       setActiveChat(thread); 
     } else { 
@@ -879,10 +985,7 @@ export default function App() {
     let currentKeys = savedKeys[targetThread.id] || [];
     if (typeof currentKeys === 'string') currentKeys = [currentKeys];
     
-    // Add new key to the keychain if it doesn't exist
-    if (!currentKeys.includes(tempKey.trim())) {
-      currentKeys.push(tempKey.trim());
-    }
+    if (!currentKeys.includes(tempKey.trim())) currentKeys.push(tempKey.trim());
 
     savedKeys[targetThread.id] = currentKeys;
     localStorage.setItem('commslink_keys', JSON.stringify(savedKeys));
@@ -912,14 +1015,37 @@ export default function App() {
     }
   };
 
+  // --- GLOBAL STYLES (Includes new animations) ---
   const globalStyles = `
     @keyframes popIn { 0% { opacity: 0; transform: translateY(10px) scale(0.98); } 100% { opacity: 1; transform: translateY(0) scale(1); } } 
     .animate-pop-in { animation: popIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } 
+    
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } 
     .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
     
     @keyframes bouncySlideUp { 0% { transform: translateY(100%); opacity: 0; } 70% { transform: translateY(-5%); opacity: 1; } 100% { transform: translateY(0); opacity: 1; } }
     .animate-bouncy-slide-up { animation: bouncySlideUp 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+    /* New: Glitch effect for Cyberpunk */
+    @keyframes glitchIn {
+      0% { opacity: 0; transform: scale(0.9) translate3d(2px, 0, 0); filter: drop-shadow(-2px 0 red) drop-shadow(2px 0 cyan); }
+      20% { opacity: 0.8; transform: scale(1.02) translate3d(-2px, 0, 0); filter: drop-shadow(2px 0 red) drop-shadow(-2px 0 cyan); }
+      40% { opacity: 1; transform: scale(0.98) translate3d(2px, 0, 0); filter: drop-shadow(-1px 0 red) drop-shadow(1px 0 cyan); }
+      60% { opacity: 1; transform: scale(1) translate3d(0, 0, 0); filter: none; }
+      100% { opacity: 1; transform: scale(1); filter: none; }
+    }
+    .animate-glitch-in { animation: glitchIn 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; }
+
+    /* New: Burning Out dissolve animation */
+    .burning-out {
+      animation: dissolve 1.5s forwards ease-out;
+      pointer-events: none;
+    }
+    @keyframes dissolve {
+      0% { opacity: 1; filter: blur(0px); transform: scale(1); }
+      50% { opacity: 0.5; filter: blur(3px); transform: translateY(-5px) rotate(1deg); }
+      100% { opacity: 0; filter: blur(10px); transform: translateY(-20px) scale(0.9); }
+    }
 
     .glass-picker { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
     .custom-scrollbar::-webkit-scrollbar { width: 5px; }
@@ -1078,9 +1204,9 @@ export default function App() {
       </div>
 
       {/* ================= RIGHT MAIN CHAT AREA ================= */}
-      <div className={`${!activeChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col relative bg-[#050508]`}>
+      <div className={`${!activeChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col relative bg-[#050508] min-h-0`}>
         {activeChat ? (
-          <ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => setActiveChat(null)} deleteChat={handleDeleteChat} t={t} />
+          <ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => setActiveChat(null)} deleteChat={handleDeleteChat} t={t} themeMode={themeMode} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-500/40 relative">
              <div className="absolute inset-0 bg-center bg-no-repeat bg-contain opacity-5" style={{ backgroundImage: "url('data:image/svg+xml;utf8,<svg width=\"100\" height=\"100\" viewBox=\"0 0 100 100\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M50 20L80 40V70L50 90L20 70V40L50 20Z\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>')" }}></div>
