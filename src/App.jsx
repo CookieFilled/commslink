@@ -7,7 +7,7 @@ import {
   ShieldCheck, LogOut, User, Loader2, Check, Users, 
   Palette, Reply, X, Smile, Mic, Square, Play, Pause, 
   ChevronLeft, Fingerprint, Search, Plus, Trash2, Settings, 
-  Camera, PenLine, RefreshCw, Copy, Paperclip, CheckCheck, Flame, Clock
+  Camera, PenLine, RefreshCw, Copy, Paperclip, CheckCheck, Flame, Clock, ChevronDown, Image as ImageIcon
 } from 'lucide-react';
 
 // --- Firebase Initialization ---
@@ -58,7 +58,7 @@ const parseMarkdown = (text) => {
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>')
     .replace(/~(.*?)~/g, '<del>$1</del>')
-    .replace(/`(.*?)`/g, '<code class="bg-black/40 px-1.5 py-0.5 rounded text-cyan-400 font-mono text-[13px] border border-white/5">$1</code>');
+    .replace(/`(.*?)`/g, '<code class="bg-black/40 px-1.5 py-0.5 rounded text-cyan-400 font-mono text-[13px] border border-white/5 break-words">$1</code>');
   return { __html: html };
 };
 
@@ -236,7 +236,7 @@ const AuthScreen = ({ t }) => {
   );
 };
 
-// --- 2. THE INDIVIDUAL MESSAGE COMPONENT (Allows per-message state for animations) ---
+// --- 2. THE INDIVIDUAL MESSAGE COMPONENT ---
 const MessageItem = ({ 
   msg, index, isMine, isGroup, isConsecutive, repliedMsg, hasReactions, isRead, 
   user, t, themeMode, toggleReaction, reactionPicker, setReactionPicker, 
@@ -244,31 +244,35 @@ const MessageItem = ({
 }) => {
   const activeTouch = useRef({ startX: 0, timer: null, isLongPress: false });
   const [isExpiring, setIsExpiring] = useState(false);
+  const [isHidden, setIsHidden] = useState(false); // Fully hide after animation
 
-  // Auto-Burn 5-second dissolution animation timer
+  // Auto-Burn 5-second vanishing animation timer
   useEffect(() => {
     if (msg.expiresAt) {
       const checkExpiry = () => {
         const timeLeft = msg.expiresAt - Date.now();
         if (timeLeft <= 5000 && timeLeft > 0) setIsExpiring(true);
+        if (timeLeft <= 0) setIsHidden(true); // Failsafe for DOM removal gap
       };
-      checkExpiry(); // Check immediately on mount
+      checkExpiry();
       const timer = setInterval(checkExpiry, 1000);
       return () => clearInterval(timer);
     }
   }, [msg.expiresAt]);
 
-  // Determine Entry Animation based on theme
-  const entryAnimationClass = themeMode === 'cyberpunk' ? 'animate-glitch-in' : 'animate-pop-in';
+  if (isHidden) return null;
 
-  // Grouping visual adjustments (WhatsApp style)
+  const entryAnimationClass = themeMode === 'cyberpunk' ? 'animate-glitch-in' : 'animate-pop-in';
   const bubbleSpacing = isConsecutive ? 'mt-1' : 'mt-4';
   const borderRadius = isMine 
     ? (isConsecutive ? 'rounded-2xl rounded-tr-md' : 'rounded-2xl rounded-tr-sm') 
     : (isConsecutive ? 'rounded-2xl rounded-tl-md' : 'rounded-2xl rounded-tl-sm');
 
+  // Dynamic Z-Index to prevent reaction clipping
+  const zIndexClass = reactionPicker === msg.id ? 'z-[100]' : 'z-10';
+
   return (
-    <div className={`flex flex-col max-w-[85%] md:max-w-[70%] relative group ${isMine ? 'self-end items-end' : 'self-start items-start'} ${bubbleSpacing} ${entryAnimationClass}`}
+    <div className={`flex flex-col max-w-[85%] md:max-w-[70%] relative group ${isMine ? 'self-end items-end' : 'self-start items-start'} ${bubbleSpacing} ${entryAnimationClass} ${isExpiring ? 'vanishing' : ''} ${zIndexClass}`}
       onTouchStart={e => { activeTouch.current.startX = e.targetTouches[0].clientX; activeTouch.current.isLongPress = false; activeTouch.current.timer = setTimeout(() => { activeTouch.current.isLongPress = true; if(navigator.vibrate) navigator.vibrate(40); setReactionPicker(msg.id); }, 450); }}
       onTouchMove={() => clearTimeout(activeTouch.current.timer)}
       onTouchEnd={e => { clearTimeout(activeTouch.current.timer); if (!activeTouch.current.isLongPress && e.changedTouches[0].clientX - activeTouch.current.startX > 60) setReplyingTo(msg); }}
@@ -279,12 +283,11 @@ const MessageItem = ({
       </div>
 
       {reactionPicker === msg.id && (
-        <div className={`absolute ${isMine ? 'right-0' : 'left-0'} ${index < 3 ? 'top-full mt-2' : 'bottom-full mb-2'} bg-[#1a1a24]/95 border border-white/10 rounded-2xl p-3 z-50 w-[270px] max-h-48 overflow-y-auto custom-scrollbar glass-picker animate-pop-in`} onClick={e => e.stopPropagation()}>
+        <div className={`absolute ${isMine ? 'right-0' : 'left-0'} ${index < 3 ? 'top-full mt-2' : 'bottom-full mb-2'} bg-[#1a1a24]/95 border border-white/10 rounded-2xl p-3 z-[200] w-[270px] max-h-48 overflow-y-auto custom-scrollbar glass-picker animate-pop-in`} onClick={e => e.stopPropagation()}>
           <div className="grid grid-cols-6 gap-1">{REACTION_EMOJIS.map(emoji => (<button key={emoji} onClick={() => toggleReaction(msg.id, msg.reactions, emoji)} className="w-9 h-9 hover:bg-white/10 rounded-lg text-xl transition-all hover:scale-110">{emoji}</button>))}</div>
         </div>
       )}
 
-      {/* Hide sender name & burn info if consecutive to save space */}
       {!isConsecutive && (
         <div className="flex items-center gap-2 mb-1">
           {!isMine && isGroup && <span className="text-[10px] text-slate-500 ml-1">{msg.senderName}</span>}
@@ -292,10 +295,9 @@ const MessageItem = ({
         </div>
       )}
 
-      {/* The main message bubble - applies burning-out animation natively */}
-      <div className={`p-1.5 shadow-lg relative transition-all duration-1000 ${isExpiring ? 'burning-out' : ''} ${borderRadius} ${msg.isDecrypted ? isMine ? `bg-gradient-to-br ${msg.expiresAt ? 'from-orange-600/30 to-red-600/20 border-orange-500/30 text-orange-50' : t.msgMine} border` : 'bg-[#1a1a24] border border-white/10 text-slate-200' : 'bg-red-900/20 border border-red-500/30 text-red-300'}`}>
+      <div className={`p-1.5 shadow-lg relative max-w-full ${borderRadius} ${msg.isDecrypted ? isMine ? `bg-gradient-to-br ${msg.expiresAt ? 'from-orange-600/30 to-red-600/20 border-orange-500/30 text-orange-50' : t.msgMine} border` : 'bg-[#1a1a24] border border-white/10 text-slate-200' : 'bg-red-900/20 border border-red-500/30 text-red-300'}`}>
         {repliedMsg && repliedMsg.isDecrypted && (
-          <div className="mb-2 p-2 bg-black/30 rounded border-l-2 border-cyan-500/50 text-xs opacity-80 select-none">
+          <div className="mb-2 p-2 bg-black/30 rounded border-l-2 border-cyan-500/50 text-xs opacity-80 select-none overflow-hidden text-ellipsis">
             <span className={`font-bold ${t.text}`}>{repliedMsg.senderName}</span>
             <span className="truncate block max-w-[200px] mt-0.5">{repliedMsg.type === 'text' ? repliedMsg.decryptedText : `📷 Media`}</span>
           </div>
@@ -303,9 +305,9 @@ const MessageItem = ({
         
         {msg.isDecrypted ? (
           msg.type === 'image' ? (
-             <img src={msg.decryptedText} onClick={() => setZoomedImage(msg.decryptedText)} className="max-w-full rounded-xl cursor-zoom-in border border-white/5" style={{maxHeight:'350px'}} /> 
+             <img src={msg.decryptedText} onClick={() => setZoomedImage(msg.decryptedText)} className="max-w-full rounded-xl cursor-zoom-in border border-white/5 object-contain" style={{maxHeight:'350px'}} /> 
           ) : msg.type === 'video' ? (
-             <video controls src={msg.decryptedText} className="max-w-full rounded-xl shadow-md border border-white/10" style={{maxHeight:'350px'}} />
+             <video controls src={msg.decryptedText} className="max-w-full rounded-xl shadow-md border border-white/10 object-contain" style={{maxHeight:'350px'}} />
           ) : msg.type === 'video_loading' ? (
              <div className="px-4 py-3 flex flex-col gap-2 min-w-[200px]">
                 <div className={`flex items-center gap-2 font-bold mb-1 border-b border-white/10 pb-2 text-xs ${t.text}`}><Loader2 className="w-3.5 h-3.5 animate-spin" /> ASSEMBLING DATA...</div>
@@ -315,19 +317,18 @@ const MessageItem = ({
           ) : msg.type === 'audio' ? (
              <CustomAudioPlayer src={msg.decryptedText} t={t} /> 
           ) : (
-             <div className="px-4 py-2.5 text-[15px] whitespace-pre-wrap leading-relaxed" dangerouslySetInnerHTML={parseMarkdown(msg.decryptedText)}></div>
+             <div className="px-4 py-2.5 text-[15px] whitespace-pre-wrap break-words overflow-wrap-anywhere leading-relaxed" dangerouslySetInnerHTML={parseMarkdown(msg.decryptedText)}></div>
           )
         ) : (
           <div className="px-4 py-3 text-xs opacity-50"><Lock className="w-3.5 h-3.5 inline mr-1"/> BLOCKED/INVALID KEY</div>
         )}
       
         {hasReactions && (
-          <div className={`absolute -bottom-3 ${isMine ? 'right-2' : 'left-2'} flex flex-wrap gap-1 z-10 animate-pop-in`}>
+          <div className={`absolute -bottom-3 ${isMine ? 'right-2' : 'left-2'} flex flex-wrap gap-1 z-[60] animate-pop-in`}>
             {Object.entries(msg.reactions).map(([emoji, users]) => (<button key={emoji} onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, msg.reactions, emoji); }} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] border shadow-md transition-all active:scale-95 hover:scale-105 ${users.includes(user.uid) ? `${t.bgLight} ${t.border} ${t.text}` : 'bg-[#1a1a24] border-white/10 text-slate-300'}`}><span>{emoji}</span>{users.length > 1 && <span>{users.length}</span>}</button>))}
           </div>
         )}
 
-        {/* Read Receipt */}
         {isMine && !isGroup && (
           <div className={`absolute -right-5 bottom-1 ${isRead ? 'text-cyan-400' : 'text-slate-500'}`}>
             {isRead ? <CheckCheck className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
@@ -358,9 +359,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
 
+  // Burn Modal States
   const [showBurnModal, setShowBurnModal] = useState(false);
   const [burnText, setBurnText] = useState('');
+  const [burnFile, setBurnFile] = useState(null);
   const [burnDuration, setBurnDuration] = useState(300000); 
+  const [isTimeDropdownOpen, setIsTimeDropdownOpen] = useState(false);
+  const burnFileInputRef = useRef(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -485,44 +490,25 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     e.preventDefault(); if (!inputText.trim() || !user) return;
     const txt = inputText; setInputText('');
     const replyId = replyingTo ? replyingTo.id : null; setReplyingTo(null);
-    
     const activeKey = encryptionKeys[encryptionKeys.length - 1];
 
     try {
       const enc = await encryptText(txt, activeKey);
       await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
         senderId: user.uid, senderName: user.displayName, 
-        text: enc, type: 'text', timestamp: Date.now(), replyToId: replyId, reactions: {},
-        expiresAt: null
+        text: enc, type: 'text', timestamp: Date.now(), replyToId: replyId, reactions: {}, expiresAt: null
       });
       await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
     } catch (err) { console.error(err); }
   };
 
-  const handleSendBurnMessage = async (e) => {
-    e.preventDefault(); if (!burnText.trim() || !user) return;
-    const txt = burnText;
-    setBurnText('');
-    setShowBurnModal(false);
-    
-    const activeKey = encryptionKeys[encryptionKeys.length - 1];
-
-    try {
-      const enc = await encryptText(txt, activeKey);
-      await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
-        senderId: user.uid, senderName: user.displayName, 
-        text: enc, type: 'text', timestamp: Date.now(), replyToId: null, reactions: {},
-        expiresAt: Date.now() + Number(burnDuration)
-      });
-      await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
-    } catch (err) { console.error(err); }
-  };
-
-  const processAndSendMedia = async (file) => {
+  // Modified to handle override expiry duration (for Burn Files)
+  const processAndSendMedia = async (file, burnOverride = null) => {
     if (!file || !user) return;
     setIsUploading(true);
     const replyId = replyingTo ? replyingTo.id : null; setReplyingTo(null);
     const activeKey = encryptionKeys[encryptionKeys.length - 1];
+    const expiryTimestamp = burnOverride ? Date.now() + Number(burnOverride) : null;
     
     try {
       if (file.type.startsWith('video/')) {
@@ -543,7 +529,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
             senderId: user.uid, senderName: user.displayName, 
             type: 'video_chunk', videoGroupId, chunkIndex: i, totalChunks, 
             text: chunkText, timestamp: Date.now() + i, replyToId: replyId, reactions: {},
-            expiresAt: null
+            expiresAt: expiryTimestamp
           });
         }
         await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
@@ -553,11 +539,39 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         const b64 = await compressImage(file); const enc = await encryptText(b64, activeKey);
         await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
           senderId: user.uid, senderName: user.displayName, text: enc, type: 'image', timestamp: Date.now(), replyToId: replyId, reactions: {},
-          expiresAt: null
+          expiresAt: expiryTimestamp
         });
         await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
       }
     } catch (err) { alert("Failed to send media."); } finally { setIsUploading(false); setUploadText(''); }
+  };
+
+  const handleSendBurnMessage = async (e) => {
+    e.preventDefault(); 
+    if (!user || (!burnText.trim() && !burnFile)) return;
+
+    setShowBurnModal(false);
+    const activeKey = encryptionKeys[encryptionKeys.length - 1];
+    const expiryTimestamp = Date.now() + Number(burnDuration);
+
+    if (burnText.trim()) {
+      try {
+        const enc = await encryptText(burnText, activeKey);
+        await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
+          senderId: user.uid, senderName: user.displayName, 
+          text: enc, type: 'text', timestamp: Date.now(), replyToId: null, reactions: {},
+          expiresAt: expiryTimestamp
+        });
+        await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
+      } catch (err) { console.error(err); }
+    }
+
+    if (burnFile) {
+      await processAndSendMedia(burnFile, burnDuration);
+    }
+    
+    setBurnText('');
+    setBurnFile(null);
   };
 
   const handleDragEnter = (e) => {
@@ -630,8 +644,15 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     ? messages.filter(m => m.isDecrypted && m.type === 'text' && m.decryptedText?.toLowerCase().includes(searchQuery.toLowerCase()))
     : messages;
 
+  const burnTimeOptions = [
+    { label: '1 Minute', val: 60000 },
+    { label: '5 Minutes', val: 300000 },
+    { label: '1 Hour', val: 3600000 },
+    { label: '24 Hours', val: 86400000 },
+  ];
+
   return (
-    <div className="flex-1 flex flex-col relative bg-[#050508] min-h-0" onClick={() => setReactionPicker(null)} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
+    <div className="flex-1 flex flex-col relative bg-[#050508] min-h-0 overflow-x-hidden" onClick={() => { setReactionPicker(null); setIsTimeDropdownOpen(false); }} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
       {isDragging && (
         <div className="absolute inset-0 z-[200] bg-black/60 backdrop-blur-sm m-4 rounded-2xl border-2 border-dashed border-cyan-500 flex items-center justify-center pointer-events-none transition-all animate-fade-in">
           <div className="bg-[#1a1a24] p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 animate-pop-in">
@@ -643,31 +664,64 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       )}
 
       {zoomedImage && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md cursor-pointer animate-fade-in" onClick={() => setZoomedImage(null)}>
-          <img src={zoomedImage} alt="Zoomed" className="max-w-full max-h-[90vh] rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
+        <div className="fixed inset-0 z-[300] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md cursor-pointer animate-fade-in" onClick={() => setZoomedImage(null)}>
+          <img src={zoomedImage} alt="Zoomed" className="max-w-full max-h-[90vh] rounded-lg shadow-2xl object-contain" onClick={e => e.stopPropagation()} />
         </div>
       )}
 
+      {/* Burn Modal */}
       {showBurnModal && (
-        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-pop-in">
+        <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-pop-in" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold text-orange-500 flex items-center gap-2"><Flame className="w-5 h-5" /> Send Burn Message</h3>
-              <button onClick={() => setShowBurnModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+              <button onClick={() => { setShowBurnModal(false); setBurnFile(null); }} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
-            <p className="text-xs text-slate-400 mb-4">Message securely self-destructs after the timer expires.</p>
+            <p className="text-xs text-slate-400 mb-4">Content securely self-destructs after the timer expires.</p>
             <form onSubmit={handleSendBurnMessage}>
-              <textarea autoFocus required value={burnText} onChange={(e) => setBurnText(e.target.value)} placeholder="Type confidential message..." rows="4" className="w-full bg-black/50 border border-orange-500/30 rounded-xl px-4 py-3 mb-4 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 resize-none text-sm text-white custom-scrollbar"></textarea>
-              <div className="flex items-center gap-2 mb-4 bg-black/40 p-2 rounded-xl border border-white/5">
-                <Clock className="w-4 h-4 text-slate-400 ml-2" />
-                <select value={burnDuration} onChange={(e) => setBurnDuration(e.target.value)} className="w-full bg-transparent outline-none text-sm text-slate-200 cursor-pointer">
-                  <option value={60000}>1 Minute</option>
-                  <option value={300000}>5 Minutes</option>
-                  <option value={3600000}>1 Hour</option>
-                  <option value={86400000}>24 Hours</option>
-                </select>
+              
+              {burnFile ? (
+                <div className="relative mb-4 w-full h-32 bg-black/40 rounded-xl border border-orange-500/30 flex items-center justify-center overflow-hidden group">
+                  {burnFile.type.startsWith('image/') ? (
+                    <img src={URL.createObjectURL(burnFile)} className="w-full h-full object-cover opacity-60" />
+                  ) : (
+                    <div className="flex flex-col items-center text-orange-400 opacity-60"><Play className="w-8 h-8 mb-2" /><span>{burnFile.name}</span></div>
+                  )}
+                  <button type="button" onClick={() => setBurnFile(null)} className="absolute top-2 right-2 p-1.5 bg-black/60 rounded-full text-white hover:bg-red-500/80 transition-all"><X className="w-4 h-4"/></button>
+                </div>
+              ) : (
+                <textarea autoFocus value={burnText} onChange={(e) => setBurnText(e.target.value)} placeholder="Type confidential message..." rows="4" className="w-full bg-black/50 border border-orange-500/30 rounded-xl px-4 py-3 mb-4 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 resize-none text-sm text-white custom-scrollbar"></textarea>
+              )}
+
+              <div className="flex items-center gap-2 mb-6">
+                {!burnFile && !burnText && (
+                  <>
+                    <input type="file" accept="image/*,video/*" className="hidden" ref={burnFileInputRef} onChange={e => { if(e.target.files[0]) setBurnFile(e.target.files[0]); }} />
+                    <button type="button" onClick={() => burnFileInputRef.current?.click()} className="p-3 bg-black/40 border border-white/5 rounded-xl text-slate-400 hover:text-orange-400 hover:border-orange-500/30 transition-all">
+                      <ImageIcon className="w-5 h-5" />
+                    </button>
+                  </>
+                )}
+
+                {/* Custom Styled Dropdown for Burn Timer */}
+                <div className="relative flex-1">
+                  <div onClick={() => setIsTimeDropdownOpen(!isTimeDropdownOpen)} className="flex items-center justify-between bg-black/40 p-3 rounded-xl border border-white/5 cursor-pointer hover:border-white/20 transition-all">
+                    <div className="flex items-center gap-2 text-slate-200 text-sm"><Clock className="w-4 h-4 text-slate-400" /> {burnTimeOptions.find(o => o.val === Number(burnDuration))?.label}</div>
+                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isTimeDropdownOpen ? 'rotate-180' : ''}`} />
+                  </div>
+                  {isTimeDropdownOpen && (
+                    <ul className="absolute bottom-full left-0 w-full mb-2 bg-[#222230] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[210] animate-fade-in">
+                      {burnTimeOptions.map((opt) => (
+                        <li key={opt.val} onClick={() => { setBurnDuration(opt.val); setIsTimeDropdownOpen(false); }} className={`px-4 py-3 text-sm cursor-pointer hover:bg-orange-500/20 transition-colors ${burnDuration === opt.val ? 'text-orange-400 font-bold bg-orange-500/10' : 'text-slate-300'}`}>
+                          {opt.label}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
-              <button type="submit" disabled={!burnText.trim()} className={`w-full py-3 rounded-xl bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white font-bold text-sm shadow-lg shadow-red-500/20 disabled:opacity-50 transition-all`}>
+
+              <button type="submit" disabled={!burnText.trim() && !burnFile} className={`w-full py-3 rounded-xl bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white font-bold text-sm shadow-lg shadow-red-500/20 disabled:opacity-50 transition-all`}>
                 Deploy Secret
               </button>
             </form>
@@ -706,7 +760,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           <button onClick={changeKey} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-white hover:bg-white/5`} title="Update Encryption Key"><Key className="w-4 h-4" /></button>
           <button onClick={() => setShowBurnModal(true)} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-orange-400 hover:bg-orange-500/10`} title="Send Burn Message"><Flame className="w-4 h-4" /></button>
           <button onClick={() => { setShowSearch(!showSearch); setSearchQuery(''); }} className={`p-2 rounded-lg transition-all ${showSearch ? 'text-white bg-white/10' : 'text-slate-500 hover:text-white hover:bg-white/5'}`} title="Search Messages"><Search className="w-4 h-4" /></button>
@@ -762,7 +816,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         )}
         <div className="p-3 sm:p-4 flex gap-2 relative items-center">
           {!isRecording && (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0">
               <input type="file" accept="image/*,video/*" className="hidden" ref={fileInputRef} onChange={(e) => { 
                 if(e.target.files[0]) { 
                   if (!e.target.files[0].type.startsWith('image/') && !e.target.files[0].type.startsWith('video/')) {
@@ -777,12 +831,12 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
             </div>
           )}
           {isUploading && uploadText ? (
-             <div className={`flex-1 flex justify-between bg-black/50 border border-white/10 rounded-xl px-4 py-3 animate-pulse`}>
-                <span className={`font-bold tracking-widest text-xs flex items-center gap-2 ${t.text}`}><Loader2 className="w-4 h-4 animate-spin"/> {uploadText}</span>
+             <div className={`flex-1 flex justify-between bg-black/50 border border-white/10 rounded-xl px-4 py-3 animate-pulse overflow-hidden`}>
+                <span className={`font-bold tracking-widest text-xs flex items-center gap-2 ${t.text} truncate`}><Loader2 className="w-4 h-4 animate-spin shrink-0"/> {uploadText}</span>
              </div>
           ) : isRecording ? (
-            <div className="flex-1 flex justify-between bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 animate-pulse">
-              <span className="text-red-400 font-bold tracking-widest text-sm flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-red-500"></div> RECORDING</span>
+            <div className="flex-1 flex justify-between bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 animate-pulse overflow-hidden">
+              <span className="text-red-400 font-bold tracking-widest text-sm flex items-center gap-2 truncate"><div className="w-2 h-2 rounded-full bg-red-500 shrink-0"></div> REC</span>
               <span className="text-red-400 font-bold">{Math.floor(recordingTime/60)}:{recordingTime%60 < 10 ? '0':''}{recordingTime%60}</span>
             </div>
           ) : (
@@ -791,9 +845,9 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
             </form>
           )}
           {isRecording ? (
-             <button onClick={stopRecording} className="bg-red-600 hover:bg-red-500 p-3 rounded-xl text-white transition-colors shadow-lg shadow-red-500/20"><Square className="w-5 h-5 fill-current" /></button> 
+             <button onClick={stopRecording} className="bg-red-600 hover:bg-red-500 p-3 rounded-xl text-white transition-colors shadow-lg shadow-red-500/20 shrink-0"><Square className="w-5 h-5 fill-current" /></button> 
           ) : (
-             <button onClick={handleSendText} disabled={(!inputText.trim() && !isUploading) || isUploading} className={`bg-gradient-to-r ${t.sendBtn} p-3 rounded-xl text-white disabled:opacity-50 transition-all ${t.glow} hover:-translate-y-0.5 active:scale-95`}><Send className="w-5 h-5 ml-0.5" /></button>
+             <button onClick={handleSendText} disabled={(!inputText.trim() && !isUploading) || isUploading} className={`bg-gradient-to-r ${t.sendBtn} p-3 rounded-xl text-white disabled:opacity-50 transition-all ${t.glow} hover:-translate-y-0.5 active:scale-95 shrink-0`}><Send className="w-5 h-5 ml-0.5" /></button>
           )}
         </div>
       </div>
@@ -1015,18 +1069,17 @@ export default function App() {
     }
   };
 
-  // --- GLOBAL STYLES (Includes new animations) ---
+  // --- GLOBAL STYLES ---
   const globalStyles = `
     @keyframes popIn { 0% { opacity: 0; transform: translateY(10px) scale(0.98); } 100% { opacity: 1; transform: translateY(0) scale(1); } } 
     .animate-pop-in { animation: popIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } 
     
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } 
-    .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+    .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
     
     @keyframes bouncySlideUp { 0% { transform: translateY(100%); opacity: 0; } 70% { transform: translateY(-5%); opacity: 1; } 100% { transform: translateY(0); opacity: 1; } }
     .animate-bouncy-slide-up { animation: bouncySlideUp 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
 
-    /* New: Glitch effect for Cyberpunk */
     @keyframes glitchIn {
       0% { opacity: 0; transform: scale(0.9) translate3d(2px, 0, 0); filter: drop-shadow(-2px 0 red) drop-shadow(2px 0 cyan); }
       20% { opacity: 0.8; transform: scale(1.02) translate3d(-2px, 0, 0); filter: drop-shadow(2px 0 red) drop-shadow(-2px 0 cyan); }
@@ -1036,15 +1089,15 @@ export default function App() {
     }
     .animate-glitch-in { animation: glitchIn 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; }
 
-    /* New: Burning Out dissolve animation */
-    .burning-out {
-      animation: dissolve 1.5s forwards ease-out;
+    /* New Clean Vanishing Animation */
+    .vanishing {
+      animation: vanish 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
       pointer-events: none;
     }
-    @keyframes dissolve {
-      0% { opacity: 1; filter: blur(0px); transform: scale(1); }
-      50% { opacity: 0.5; filter: blur(3px); transform: translateY(-5px) rotate(1deg); }
-      100% { opacity: 0; filter: blur(10px); transform: translateY(-20px) scale(0.9); }
+    @keyframes vanish {
+      0% { opacity: 1; transform: scale(1) translateY(0); max-height: 500px; margin-bottom: 1rem; }
+      40% { opacity: 0; transform: scale(0.95) translateY(-10px); max-height: 500px; margin-bottom: 1rem; }
+      100% { opacity: 0; transform: scale(0.95) translateY(-10px); max-height: 0; margin-bottom: 0; padding: 0; border: none; overflow: hidden; }
     }
 
     .glass-picker { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
@@ -1129,7 +1182,7 @@ export default function App() {
               <span className="text-[10px] text-slate-400 uppercase">Global Network</span>
             </div>
           </div>
-          <div className="flex gap-1">
+          <div className="flex gap-1 shrink-0">
             <button onClick={toggleTheme} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5"><Palette className="w-4 h-4" /></button>
             <button onClick={handleLogout} className="p-2 text-red-400 hover:text-red-300 rounded-lg hover:bg-white/5"><LogOut className="w-4 h-4" /></button>
           </div>
@@ -1147,7 +1200,7 @@ export default function App() {
                 <div className={`absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:${t.text}`}><Search className="w-3.5 h-3.5" /></div>
                 <input type="text" value={searchAgentId} onChange={(e) => setSearchAgentId(e.target.value)} placeholder="Enter Agent ID..." className={`w-full bg-black/50 border border-white/10 rounded-lg py-2 pl-9 pr-3 text-sm ${t.ring} focus:ring-1 outline-none transition-all`} />
               </div>
-              <button type="submit" disabled={isSearching || !searchAgentId.trim()} className={`bg-gradient-to-r ${t.sendBtn} text-white px-3 rounded-lg disabled:opacity-50`}><Plus className="w-4 h-4" /></button>
+              <button type="submit" disabled={isSearching || !searchAgentId.trim()} className={`bg-gradient-to-r ${t.sendBtn} text-white px-3 rounded-lg disabled:opacity-50 shrink-0`}><Plus className="w-4 h-4" /></button>
             </form>
           ) : (
             <form onSubmit={handleGroupJoin} className="flex gap-2">
@@ -1155,7 +1208,7 @@ export default function App() {
                 <input type="text" value={groupNameInput} onChange={(e) => setGroupNameInput(e.target.value)} placeholder="Server Name..." className={`w-full bg-black/50 border border-white/10 rounded-lg py-2 pl-3 pr-8 text-sm ${t.ring} focus:ring-1 outline-none transition-all`} />
                 <button type="button" onClick={generateRandomGroup} className="absolute right-2 p-1 text-slate-500 hover:text-white" title="Random Server"><RefreshCw className="w-3 h-3" /></button>
               </div>
-              <button type="submit" disabled={isSearching || !groupNameInput.trim()} className={`bg-gradient-to-r ${t.sendBtn} text-white px-3 rounded-lg disabled:opacity-50`}><Users className="w-4 h-4" /></button>
+              <button type="submit" disabled={isSearching || !groupNameInput.trim()} className={`bg-gradient-to-r ${t.sendBtn} text-white px-3 rounded-lg disabled:opacity-50 shrink-0`}><Users className="w-4 h-4" /></button>
             </form>
           )}
         </div>
