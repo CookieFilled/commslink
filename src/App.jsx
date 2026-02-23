@@ -930,7 +930,15 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
                 } 
               }} />
               <button onClick={() => fileInputRef.current?.click()} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Paperclip className="w-5 h-5" /></button>
-              <button onClick={() => setShowStickerPicker(!showStickerPicker)} className={`p-2 sm:p-2.5 ${showStickerPicker ? t.text : 'text-slate-400'} hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Sticker className="w-5 h-5" /></button>
+              <button 
+  onClick={(e) => { 
+    e.stopPropagation(); 
+    setShowStickerPicker(!showStickerPicker); 
+  }} 
+  className={`p-2 sm:p-2.5 ${showStickerPicker ? t.text : 'text-slate-400'} hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}
+>
+  <Sticker className="w-5 h-5" />
+</button>
               <button onClick={startRecording} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Mic className="w-5 h-5" /></button>
             </div>
           )}
