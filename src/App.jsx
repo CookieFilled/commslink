@@ -7,7 +7,7 @@ import {
   ShieldCheck, LogOut, User, Loader2, Check, Users, 
   Palette, Reply, X, Smile, Mic, Square, Play, Pause, 
   ChevronLeft, Fingerprint, Search, Plus, Trash2, Settings, 
-  Camera, PenLine, RefreshCw, Copy, Paperclip, Film
+  Camera, PenLine, RefreshCw, Copy, Paperclip, CheckCheck, Flame
 } from 'lucide-react';
 
 // --- Firebase Initialization ---
@@ -49,6 +49,17 @@ const decryptText = async (base64, password) => {
     const key = await deriveKey(password, salt);
     return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, ciphertext));
   } catch (e) { return null; }
+};
+
+// --- Markdown Parser ---
+const parseMarkdown = (text) => {
+  if (!text) return { __html: "" };
+  let html = text
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/~(.*?)~/g, '<del>$1</del>')
+    .replace(/`(.*?)`/g, '<code class="bg-black/40 px-1.5 py-0.5 rounded text-cyan-400 font-mono text-[13px] border border-white/5">$1</code>');
+  return { __html: html };
 };
 
 // --- Media Converters & Players ---
@@ -226,8 +237,12 @@ const AuthScreen = ({ t }) => {
 };
 
 // --- 2. THE CHAT INTERFACE (RIGHT PANE) ---
-const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goBack, deleteChat, t }) => {
+// Note the new encryptionKeys prop (Array) instead of a single string
+const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, goBack, changeKey, deleteChat, t }) => {
   const [messages, setMessages] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  
   const [inputText, setInputText] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadText, setUploadText] = useState('');
@@ -237,6 +252,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
   
   const [isEditingName, setIsEditingName] = useState(false);
   const [newChatName, setNewChatName] = useState('');
+
+  const [burnTimer, setBurnTimer] = useState(0); 
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -249,30 +266,61 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
   const fileInputRef = useRef(null);
   const activeTouch = useRef({ startX: 0, timer: null, isLongPress: false });
 
+  // SCROLL BUG FIX: Track previous message length to only scroll on new messages
+  const prevMsgCount = useRef(0);
+
   const isGroup = chatData.isGroup;
   let chatName = "Unknown Channel";
   let chatAvatar = null;
   let memberCount = chatData.participants?.length || 0;
+  
+  const otherUserId = isGroup ? null : chatData.participants.find(id => id !== user.uid);
 
   if (isGroup) {
     chatName = chatData.name || "Group Server";
   } else {
-    const otherUserId = chatData.participants.find(id => id !== user.uid);
     const otherUserAgent = usersList.find(u => u.uid === otherUserId);
     chatName = chatData.customName || otherUserAgent?.displayName || 'Unknown Agent';
     chatAvatar = otherUserAgent?.avatarData || null;
   }
 
-  // Fetch and Assemble Messages
+  // Update read receipts
+  useEffect(() => {
+    if (threadId && user && messages.length > 0) {
+      updateDoc(doc(db, 'chat_threads', threadId), { 
+        [`lastRead.${user.uid}`]: Date.now() 
+      }).catch(()=>{});
+    }
+  }, [threadId, user, messages.length]); 
+
+  // Smart Scrolling Logic (The Fix)
+  useEffect(() => {
+    if (messages.length > prevMsgCount.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+    prevMsgCount.current = messages.length;
+  }, [messages.length]);
+
+  // Fetch, Assemble, Auto-Burn, and Key-Ring Decrypt
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'chat_threads', threadId, 'messages'), async (snapshot) => {
-      const raw = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      let raw = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
+      const now = Date.now();
+      const validRaw = [];
+      raw.forEach(msg => {
+        if (msg.expiresAt && msg.expiresAt <= now) {
+          deleteDoc(doc(db, 'chat_threads', threadId, 'messages', msg.id)).catch(()=>{});
+        } else {
+          validRaw.push(msg);
+        }
+      });
+      
+      validRaw.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
       const videoGroups = {};
       const normalMessages = [];
 
-      // Group fragments together
-      raw.forEach(msg => {
+      validRaw.forEach(msg => {
         if (msg.type === 'video_chunk') {
           if (!videoGroups[msg.videoGroupId]) videoGroups[msg.videoGroupId] = [];
           videoGroups[msg.videoGroupId].push(msg);
@@ -288,25 +336,14 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
           chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
           const fullEncText = chunks.map(c => c.text).join('');
           assembledVideos.push({
-            id: groupId,
-            senderId: chunks[0].senderId,
-            senderName: chunks[0].senderName,
-            type: 'video',
-            text: fullEncText,
-            timestamp: chunks[0].timestamp,
-            replyToId: chunks[0].replyToId,
-            reactions: chunks[0].reactions || {}
+            id: groupId, senderId: chunks[0].senderId, senderName: chunks[0].senderName,
+            type: 'video', text: fullEncText, timestamp: chunks[0].timestamp,
+            replyToId: chunks[0].replyToId, reactions: chunks[0].reactions || {}, expiresAt: chunks[0].expiresAt
           });
         } else {
-          // Video is still uploading!
           assembledVideos.push({
-            id: groupId,
-            senderId: chunks[0].senderId,
-            senderName: chunks[0].senderName,
-            type: 'video_loading',
-            progress: chunks.length,
-            total: total,
-            timestamp: chunks[0].timestamp
+            id: groupId, senderId: chunks[0].senderId, senderName: chunks[0].senderName,
+            type: 'video_loading', progress: chunks.length, total: total, timestamp: chunks[0].timestamp
           });
         }
       }
@@ -315,23 +352,27 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
 
       const processed = await Promise.all(combinedRaw.map(async (msg) => {
         if (msg.type === 'video_loading') return { ...msg, isDecrypted: true };
-        const decrypted = await decryptText(msg.text, encryptionKey);
+        
+        let decrypted = null;
+        // The Key Ring in action: Try all saved keys for this room until one works
+        for (const k of encryptionKeys) {
+          decrypted = await decryptText(msg.text, k);
+          if (decrypted !== null) break;
+        }
+
         return { ...msg, decryptedText: decrypted, isDecrypted: decrypted !== null };
       }));
 
       setMessages(processed);
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     });
     return () => unsubscribe();
-  }, [threadId, encryptionKey]);
+  }, [threadId, encryptionKeys]);
 
   const handleRenameChat = async (e) => {
     e.preventDefault();
     if (!newChatName.trim()) { setIsEditingName(false); return; }
     try {
-      await updateDoc(doc(db, 'chat_threads', threadId), { 
-        [isGroup ? 'name' : 'customName']: newChatName.trim() 
-      });
+      await updateDoc(doc(db, 'chat_threads', threadId), { [isGroup ? 'name' : 'customName']: newChatName.trim() });
       setIsEditingName(false);
     } catch (err) { alert("Failed to rename channel."); }
   };
@@ -340,34 +381,36 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
     e.preventDefault(); if (!inputText.trim() || !user) return;
     const txt = inputText; setInputText('');
     const replyId = replyingTo ? replyingTo.id : null; setReplyingTo(null);
+    
+    // Always use the latest key added to the keychain
+    const activeKey = encryptionKeys[encryptionKeys.length - 1];
+
     try {
-      const enc = await encryptText(txt, encryptionKey);
-      await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: enc, type: 'text', timestamp: Date.now(), replyToId: replyId, reactions: {} });
+      const enc = await encryptText(txt, activeKey);
+      await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
+        senderId: user.uid, senderName: user.displayName, 
+        text: enc, type: 'text', timestamp: Date.now(), replyToId: replyId, reactions: {},
+        expiresAt: burnTimer ? Date.now() + burnTimer : null
+      });
       await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
     } catch (err) { console.error(err); }
   };
 
-  // The Data Shredder (Handles Images and Fragmented Videos)
   const processAndSendMedia = async (file) => {
     if (!file || !user) return;
     setIsUploading(true);
     const replyId = replyingTo ? replyingTo.id : null; setReplyingTo(null);
+    const activeKey = encryptionKeys[encryptionKeys.length - 1];
     
     try {
       if (file.type.startsWith('video/')) {
-        // Prevent massive browser crashes
-        if (file.size > 15 * 1024 * 1024) {
-          alert("File too large for Shredding. Max size is 15MB.");
-          setIsUploading(false); return;
-        }
-
+        if (file.size > 15 * 1024 * 1024) { alert("Max size is 15MB."); setIsUploading(false); return; }
         setUploadText("Shredding Video File...");
         const base64Vid = await blobToBase64(file);
-        
-        setUploadText("Encrypting Data Packets...");
-        const encVid = await encryptText(base64Vid, encryptionKey);
+        setUploadText("Encrypting Packets...");
+        const encVid = await encryptText(base64Vid, activeKey);
 
-        const CHUNK_SIZE = 700000; // ~700KB chunks
+        const CHUNK_SIZE = 700000; 
         const totalChunks = Math.ceil(encVid.length / CHUNK_SIZE);
         const videoGroupId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
 
@@ -377,23 +420,22 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
           await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
             senderId: user.uid, senderName: user.displayName, 
             type: 'video_chunk', videoGroupId, chunkIndex: i, totalChunks, 
-            text: chunkText, timestamp: Date.now() + i, replyToId: replyId, reactions: {} 
+            text: chunkText, timestamp: Date.now() + i, replyToId: replyId, reactions: {},
+            expiresAt: burnTimer ? Date.now() + burnTimer : null
           });
         }
         await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
 
       } else if (file.type.startsWith('image/')) {
-        setUploadText("Compressing Image...");
-        const b64 = await compressImage(file); 
-        const enc = await encryptText(b64, encryptionKey);
-        await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: enc, type: 'image', timestamp: Date.now(), replyToId: replyId, reactions: {} });
+        setUploadText("Compressing...");
+        const b64 = await compressImage(file); const enc = await encryptText(b64, activeKey);
+        await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
+          senderId: user.uid, senderName: user.displayName, text: enc, type: 'image', timestamp: Date.now(), replyToId: replyId, reactions: {},
+          expiresAt: burnTimer ? Date.now() + burnTimer : null
+        });
         await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
       }
-    } catch (err) { 
-      console.error(err); alert("Failed to send media."); 
-    } finally { 
-      setIsUploading(false); setUploadText(''); 
-    }
+    } catch (err) { alert("Failed to send media."); } finally { setIsUploading(false); setUploadText(''); }
   };
 
   const startRecording = async () => {
@@ -407,6 +449,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
       mediaRecorderRef.current = mediaRecorder;
       mediaChunksRef.current = [];
 
+      const activeKey = encryptionKeys[encryptionKeys.length - 1];
+
       mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) mediaChunksRef.current.push(e.data); };
       mediaRecorder.onstop = async () => {
         setIsUploading(true); setUploadText("Encrypting Audio..."); 
@@ -415,9 +459,11 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
         mediaStreamRef.current.getTracks().forEach(track => track.stop()); 
         
         try {
-          const base64Audio = await blobToBase64(blob);
-          const encAudio = await encryptText(base64Audio, encryptionKey);
-          await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: encAudio, type: 'audio', timestamp: Date.now(), replyToId: replyingTo ? replyingTo.id : null, reactions: {} });
+          const base64Audio = await blobToBase64(blob); const encAudio = await encryptText(base64Audio, activeKey);
+          await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
+            senderId: user.uid, senderName: user.displayName, text: encAudio, type: 'audio', timestamp: Date.now(), replyToId: replyingTo ? replyingTo.id : null, reactions: {},
+            expiresAt: burnTimer ? Date.now() + burnTimer : null
+          });
           await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
           setReplyingTo(null);
         } catch (error) { alert("Failed to send audio."); }
@@ -443,6 +489,16 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
     await updateDoc(doc(db, 'chat_threads', threadId, 'messages', msgId), { reactions: updatedReactions });
   };
 
+  const cycleBurnTimer = () => {
+    if (burnTimer === 0) setBurnTimer(300000); // 5 mins
+    else if (burnTimer === 300000) setBurnTimer(3600000); // 1 hour
+    else setBurnTimer(0); // Off
+  };
+
+  const filteredMessages = searchQuery.trim() 
+    ? messages.filter(m => m.isDecrypted && m.type === 'text' && m.decryptedText?.toLowerCase().includes(searchQuery.toLowerCase()))
+    : messages;
+
   return (
     <div className="flex-1 flex flex-col relative bg-[#050508]" onClick={() => setReactionPicker(null)}>
       {zoomedImage && (
@@ -451,16 +507,15 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
         </div>
       )}
 
-      {/* Renaming Modal */}
       {isEditingName && (
         <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-pop-in">
             <h3 className={`text-xl font-bold mb-1 ${t.text}`}>Rename Channel</h3>
             <p className="text-xs text-slate-400 mb-4">Assign a new identity to this secure link.</p>
             <form onSubmit={handleRenameChat}>
-              <input type="text" autoFocus required value={newChatName} onChange={(e) => setNewChatName(e.target.value)} placeholder="New Name..." className={`w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 mb-4 outline-none focus:border-white/30 ${t.ring} focus:ring-1`} />
+              <input type="text" autoFocus required value={newChatName} onChange={(e) => setNewChatName(e.target.value)} className={`w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 mb-4 outline-none focus:border-white/30 ${t.ring} focus:ring-1`} />
               <div className="flex gap-2">
-                <button type="button" onClick={() => setIsEditingName(false)} className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 transition-all font-bold text-sm">Cancel</button>
+                <button type="button" onClick={() => setIsEditingName(false)} className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 font-bold text-sm">Cancel</button>
                 <button type="submit" className={`flex-1 py-3 rounded-xl bg-gradient-to-r ${t.sendBtn} text-white font-bold text-sm shadow-lg`}>Update</button>
               </div>
             </form>
@@ -485,16 +540,44 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
             </p>
           </div>
         </div>
-        <button onClick={() => deleteChat(threadId, isGroup)} className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all shrink-0" title={isGroup ? "Leave Group" : "Delete Chat"}>
-          {isGroup ? <LogOut className="w-5 h-5" /> : <Trash2 className="w-5 h-5" />}
-        </button>
+        
+        <div className="flex items-center gap-1">
+          {/* Key Rotation Button */}
+          <button onClick={changeKey} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-white hover:bg-white/5`} title="Update Encryption Key">
+            <Key className="w-4 h-4" />
+          </button>
+
+          <button onClick={cycleBurnTimer} className={`p-2 rounded-lg transition-all flex items-center gap-1 ${burnTimer ? 'text-orange-400 bg-orange-500/10' : 'text-slate-500 hover:text-white hover:bg-white/5'}`} title="Auto-Burn Timer">
+            <Flame className="w-4 h-4" />
+            {burnTimer === 300000 && <span className="text-[10px] font-bold">5M</span>}
+            {burnTimer === 3600000 && <span className="text-[10px] font-bold">1H</span>}
+          </button>
+          
+          <button onClick={() => { setShowSearch(!showSearch); setSearchQuery(''); }} className={`p-2 rounded-lg transition-all ${showSearch ? 'text-white bg-white/10' : 'text-slate-500 hover:text-white hover:bg-white/5'}`} title="Search Messages">
+            <Search className="w-4 h-4" />
+          </button>
+          
+          <button onClick={() => deleteChat(threadId, isGroup)} className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all" title={isGroup ? "Leave Group" : "Delete Chat"}>
+            {isGroup ? <LogOut className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
+          </button>
+        </div>
       </header>
 
+      {showSearch && (
+        <div className="bg-[#1a1a24] border-b border-white/5 p-2 px-4 flex items-center gap-2 animate-slide-up origin-top">
+          <Search className="w-4 h-4 text-slate-400" />
+          <input type="text" autoFocus value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search decrypted messages..." className="w-full bg-transparent outline-none text-sm text-white placeholder:text-slate-500" />
+          <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} className="p-1 text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6 custom-scrollbar">
-        {messages.length === 0 ? <div className="flex-1 flex flex-col items-center justify-center text-slate-500 opacity-50"><ShieldCheck className="w-16 h-16 mb-4" /><p className="text-sm">Secure channel established.</p></div> : messages.map((msg, index) => {
+        {filteredMessages.length === 0 ? <div className="flex-1 flex flex-col items-center justify-center text-slate-500 opacity-50"><ShieldCheck className="w-16 h-16 mb-4" /><p className="text-sm">{searchQuery ? 'No matches found.' : 'Secure channel established.'}</p></div> : filteredMessages.map((msg, index) => {
           const isMine = msg.senderId === user.uid;
           const repliedMsg = msg.replyToId ? messages.find(m => m.id === msg.replyToId) : null;
           const hasReactions = msg.reactions && Object.keys(msg.reactions).length > 0;
+          
+          const isRead = !isGroup && chatData.lastRead && chatData.lastRead[otherUserId] >= msg.timestamp;
 
           return (
             <div key={msg.id} className={`flex flex-col max-w-[85%] md:max-w-[70%] relative group ${isMine ? 'self-end items-end' : 'self-start items-start'}`}
@@ -513,7 +596,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
                 </div>
               )}
 
-              {isGroup && !isMine && <span className="text-[10px] text-slate-500 mb-1 ml-1">{msg.senderName}</span>}
+              <div className="flex items-center gap-2 mb-1">
+                {!isMine && isGroup && <span className="text-[10px] text-slate-500 ml-1">{msg.senderName}</span>}
+                {msg.expiresAt && <span className="text-[10px] text-orange-400 flex items-center gap-0.5"><Flame className="w-3 h-3"/> Burns soon</span>}
+              </div>
 
               <div className={`p-1.5 rounded-2xl shadow-lg relative ${msg.isDecrypted ? isMine ? `bg-gradient-to-br ${t.msgMine} rounded-tr-sm border` : 'bg-[#1a1a24] border border-white/10 text-slate-200 rounded-tl-sm' : 'bg-red-900/20 border border-red-500/30 text-red-300 rounded-tl-sm'}`}>
                 {repliedMsg && repliedMsg.isDecrypted && (
@@ -530,18 +616,14 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
                      <video controls src={msg.decryptedText} className="max-w-full rounded-xl shadow-md border border-white/10" style={{maxHeight:'350px'}} />
                   ) : msg.type === 'video_loading' ? (
                      <div className="px-4 py-3 flex flex-col gap-2 min-w-[200px]">
-                        <div className={`flex items-center gap-2 font-bold mb-1 border-b border-white/10 pb-2 text-xs ${t.text}`}>
-                           <Loader2 className="w-3.5 h-3.5 animate-spin" /> ASSEMBLING DATA...
-                        </div>
-                        <div className="w-full bg-black/50 h-1.5 rounded-full overflow-hidden">
-                           <div className={`h-full bg-gradient-to-r ${t.sendBtn} transition-all duration-300`} style={{width: `${(msg.progress/msg.total)*100}%`}}></div>
-                        </div>
+                        <div className={`flex items-center gap-2 font-bold mb-1 border-b border-white/10 pb-2 text-xs ${t.text}`}><Loader2 className="w-3.5 h-3.5 animate-spin" /> ASSEMBLING DATA...</div>
+                        <div className="w-full bg-black/50 h-1.5 rounded-full overflow-hidden"><div className={`h-full bg-gradient-to-r ${t.sendBtn} transition-all duration-300`} style={{width: `${(msg.progress/msg.total)*100}%`}}></div></div>
                         <span className="opacity-50 text-[10px] text-right">Packets: {msg.progress} / {msg.total}</span>
                      </div>
                   ) : msg.type === 'audio' ? (
                      <CustomAudioPlayer src={msg.decryptedText} t={t} /> 
                   ) : (
-                     <div className="px-4 py-2.5 text-[15px] whitespace-pre-wrap">{msg.decryptedText}</div>
+                     <div className="px-4 py-2.5 text-[15px] whitespace-pre-wrap leading-relaxed" dangerouslySetInnerHTML={parseMarkdown(msg.decryptedText)}></div>
                   )
                 ) : (
                   <div className="px-4 py-3 text-xs opacity-50"><Lock className="w-3.5 h-3.5 inline mr-1"/> BLOCKED/INVALID KEY</div>
@@ -550,6 +632,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
                 {hasReactions && (
                   <div className={`absolute -bottom-3 ${isMine ? 'right-2' : 'left-2'} flex flex-wrap gap-1 z-10 animate-pop-in`}>
                     {Object.entries(msg.reactions).map(([emoji, users]) => (<button key={emoji} onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, msg.reactions, emoji); }} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] border shadow-md transition-all active:scale-95 hover:scale-105 ${users.includes(user.uid) ? `${t.bgLight} ${t.border} ${t.text}` : 'bg-[#1a1a24] border-white/10 text-slate-300'}`}><span>{emoji}</span>{users.length > 1 && <span>{users.length}</span>}</button>))}
+                  </div>
+                )}
+
+                {/* Read Receipt */}
+                {isMine && !isGroup && (
+                  <div className={`absolute -right-5 bottom-1 ${isRead ? 'text-cyan-400' : 'text-slate-500'}`}>
+                    {isRead ? <CheckCheck className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
                   </div>
                 )}
               </div>
@@ -572,10 +661,9 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
         <div className="p-3 sm:p-4 flex gap-2 relative items-center">
           {!isRecording && (
             <div className="flex items-center gap-1">
-              {/* Note: File input now accepts video and images */}
               <input type="file" accept="image/*,video/*" className="hidden" ref={fileInputRef} onChange={(e) => { if(e.target.files[0]) { processAndSendMedia(e.target.files[0]); e.target.value=''; } }} />
-              <button onClick={() => fileInputRef.current?.click()} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`} title="Attach File"><Paperclip className="w-5 h-5" /></button>
-              <button onClick={startRecording} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`} title="Voice Note"><Mic className="w-5 h-5" /></button>
+              <button onClick={() => fileInputRef.current?.click()} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Paperclip className="w-5 h-5" /></button>
+              <button onClick={startRecording} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Mic className="w-5 h-5" /></button>
             </div>
           )}
           
@@ -589,15 +677,15 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKey, goB
               <span className="text-red-400 font-bold">{Math.floor(recordingTime/60)}:{recordingTime%60 < 10 ? '0':''}{recordingTime%60}</span>
             </div>
           ) : (
-            <form onSubmit={handleSendText} className="flex-1">
-              <input type="text" value={inputText} onChange={e => setInputText(e.target.value)} placeholder="Secure message..." className={`w-full bg-black/50 border border-white/10 rounded-xl py-3 px-4 text-sm ${t.ring} focus:ring-1 outline-none transition-all placeholder:text-slate-600`} />
+            <form onSubmit={handleSendText} className="flex-1 relative">
+              <input type="text" value={inputText} onChange={e => setInputText(e.target.value)} placeholder={burnTimer ? "Type self-destructing message..." : "Secure message..."} className={`w-full bg-black/50 border ${burnTimer ? 'border-orange-500/50' : 'border-white/10'} rounded-xl py-3 px-4 text-sm ${t.ring} focus:ring-1 outline-none transition-all placeholder:text-slate-600`} />
             </form>
           )}
 
           {isRecording ? (
              <button onClick={stopRecording} className="bg-red-600 hover:bg-red-500 p-3 rounded-xl text-white transition-colors shadow-lg shadow-red-500/20"><Square className="w-5 h-5 fill-current" /></button> 
           ) : (
-             <button onClick={handleSendText} disabled={(!inputText.trim() && !isUploading) || isUploading} className={`bg-gradient-to-r ${t.sendBtn} p-3 rounded-xl text-white disabled:opacity-50 transition-all ${t.glow} hover:-translate-y-0.5 active:scale-95`}><Send className="w-5 h-5 ml-0.5" /></button>
+             <button onClick={handleSendText} disabled={(!inputText.trim() && !isUploading) || isUploading} className={`bg-gradient-to-r ${burnTimer ? 'from-orange-600 to-red-600' : t.sendBtn} p-3 rounded-xl text-white disabled:opacity-50 transition-all ${t.glow} hover:-translate-y-0.5 active:scale-95`}><Send className="w-5 h-5 ml-0.5" /></button>
           )}
         </div>
       </div>
@@ -613,7 +701,7 @@ export default function App() {
   const [usersList, setUsersList] = useState([]);
   const [chatThreads, setChatThreads] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
-  const [encryptionKey, setEncryptionKey] = useState('');
+  const [encryptionKeys, setEncryptionKeys] = useState([]); // NOW AN ARRAY
   
   const [themeMode, setThemeMode] = useState('cyberpunk');
   const t = themeStyles[themeMode];
@@ -753,7 +841,8 @@ export default function App() {
         participants: [user.uid, targetAgent.uid],
         participantNames: { [user.uid]: user.displayName, [targetAgent.uid]: targetAgent.displayName },
         createdAt: Date.now(),
-        lastActivity: Date.now()
+        lastActivity: Date.now(),
+        lastRead: { [user.uid]: Date.now(), [targetAgent.uid]: 0 }
       });
 
       setSearchAgentId('');
@@ -762,19 +851,45 @@ export default function App() {
     setIsSearching(false);
   };
 
+  // KEY RING LOGIC
   const triggerChatEntry = (thread) => {
     const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}');
-    if (savedKeys[thread.id]) { setEncryptionKey(savedKeys[thread.id]); setActiveChat(thread); } 
-    else { setTargetThread(thread); setTempKey(''); setShowKeyModal(true); }
+    let keys = savedKeys[thread.id];
+    
+    if (keys) { 
+      if (typeof keys === 'string') keys = [keys]; // Migrate old users to arrays
+      setEncryptionKeys(keys); 
+      setActiveChat(thread); 
+    } else { 
+      setTargetThread(thread); setTempKey(''); setShowKeyModal(true); 
+    }
+  };
+
+  const handleChangeKey = () => {
+    setTargetThread(activeChat);
+    setTempKey('');
+    setShowKeyModal(true);
   };
 
   const confirmChatEntry = (e) => {
     e.preventDefault();
     if (!tempKey.trim()) return;
+    
     const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}');
-    savedKeys[targetThread.id] = tempKey;
+    let currentKeys = savedKeys[targetThread.id] || [];
+    if (typeof currentKeys === 'string') currentKeys = [currentKeys];
+    
+    // Add new key to the keychain if it doesn't exist
+    if (!currentKeys.includes(tempKey.trim())) {
+      currentKeys.push(tempKey.trim());
+    }
+
+    savedKeys[targetThread.id] = currentKeys;
     localStorage.setItem('commslink_keys', JSON.stringify(savedKeys));
-    setEncryptionKey(tempKey); setActiveChat(targetThread); setShowKeyModal(false);
+    
+    setEncryptionKeys(currentKeys); 
+    setActiveChat(targetThread); 
+    setShowKeyModal(false);
   };
 
   const handleDeleteChat = async (threadId, isGroup) => {
@@ -837,7 +952,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* BIG AGENT ID DISPLAY */}
             <div className="text-center mb-6">
               <p className="text-xs text-slate-400 uppercase tracking-widest mb-1">Your Agent ID</p>
               <div onClick={copyAgentId} className={`inline-flex items-center gap-2 cursor-pointer font-mono text-lg font-bold bg-black/50 py-2 px-4 rounded-xl border ${copiedId ? 'border-green-500 text-green-400' : 'border-white/10 text-white'} hover:bg-white/5 transition-all shadow-inner`}>
@@ -864,13 +978,13 @@ export default function App() {
       {showKeyModal && (
         <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-pop-in">
-            <h3 className={`text-xl font-bold mb-1 ${t.text}`}>Secure Uplink</h3>
-            <p className="text-xs text-slate-400 mb-4">Set or enter the Decryption Key for this channel.</p>
+            <h3 className={`text-xl font-bold mb-1 ${t.text}`}>Update Key Ring</h3>
+            <p className="text-xs text-slate-400 mb-4">Add a new key or enter an existing one. Old keys are saved locally to decode chat history.</p>
             <form onSubmit={confirmChatEntry}>
               <input type="password" autoFocus required value={tempKey} onChange={(e) => setTempKey(e.target.value)} placeholder="Encryption Key" className={`w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 mb-4 outline-none focus:border-white/30 ${t.ring} focus:ring-1`} />
               <div className="flex gap-2">
                 <button type="button" onClick={() => setShowKeyModal(false)} className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 transition-all font-bold text-sm">Cancel</button>
-                <button type="submit" className={`flex-1 py-3 rounded-xl bg-gradient-to-r ${t.sendBtn} text-white font-bold text-sm shadow-lg`}>Enter</button>
+                <button type="submit" className={`flex-1 py-3 rounded-xl bg-gradient-to-r ${t.sendBtn} text-white font-bold text-sm shadow-lg`}>Update Key</button>
               </div>
             </form>
           </div>
@@ -966,7 +1080,7 @@ export default function App() {
       {/* ================= RIGHT MAIN CHAT AREA ================= */}
       <div className={`${!activeChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col relative bg-[#050508]`}>
         {activeChat ? (
-          <ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={activeChat} encryptionKey={encryptionKey} goBack={() => setActiveChat(null)} deleteChat={handleDeleteChat} t={t} />
+          <ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => setActiveChat(null)} deleteChat={handleDeleteChat} t={t} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-500/40 relative">
              <div className="absolute inset-0 bg-center bg-no-repeat bg-contain opacity-5" style={{ backgroundImage: "url('data:image/svg+xml;utf8,<svg width=\"100\" height=\"100\" viewBox=\"0 0 100 100\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M50 20L80 40V70L50 90L20 70V40L50 20Z\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>')" }}></div>
