@@ -54,7 +54,6 @@ const decryptText = async (base64, password) => {
 
 const parseMarkdown = (text) => {
   if (!text) return { __html: "" };
-  // Fixed Safari-compatible linkifier
   let html = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
   html = html.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-400 underline hover:text-blue-300 break-all" onclick="event.stopPropagation()">$1</a>');
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -64,21 +63,29 @@ const parseMarkdown = (text) => {
   return { __html: html };
 };
 
-// --- Web Audio Scrambler ---
-const makeDistortionCurve = (amount) => {
-  const k = typeof amount === 'number' ? amount : 50, n_samples = 44100, curve = new Float32Array(n_samples), deg = Math.PI / 180;
-  for (let i = 0; i < n_samples; ++i) { let x = i * 2 / n_samples - 1; curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x)); }
-  return curve;
-};
-
+// --- Masked Audio (Deep Pitch EQ) ---
 const setupMaskedAudio = async (rawStream) => {
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const source = audioCtx.createMediaStreamSource(rawStream);
-  const waveShaper = audioCtx.createWaveShaper(); waveShaper.curve = makeDistortionCurve(400); waveShaper.oversample = '4x';
-  const lowpass = audioCtx.createBiquadFilter(); lowpass.type = 'lowpass'; lowpass.frequency.value = 1000;
-  const highpass = audioCtx.createBiquadFilter(); highpass.type = 'highpass'; highpass.frequency.value = 300;
   const destination = audioCtx.createMediaStreamDestination();
-  source.connect(highpass); highpass.connect(lowpass); lowpass.connect(waveShaper); waveShaper.connect(destination);
+
+  // 1. Boost deep bass frequencies to simulate a deeper, booming voice
+  const bassBoost = audioCtx.createBiquadFilter();
+  bassBoost.type = 'peaking';
+  bassBoost.frequency.value = 100; // Target the fundamental deep vocal range
+  bassBoost.Q.value = 1.0;
+  bassBoost.gain.value = 15; // 15dB boost
+
+  // 2. Slightly cut the highs to make it sound more hidden/muffled
+  const highCut = audioCtx.createBiquadFilter();
+  highCut.type = 'highshelf';
+  highCut.frequency.value = 4000;
+  highCut.gain.value = -5; // -5dB cut
+
+  source.connect(bassBoost);
+  bassBoost.connect(highCut);
+  highCut.connect(destination);
+
   return { processedStream: destination.stream, audioCtx };
 };
 
@@ -264,19 +271,26 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   // --- WebRTC States ---
   const [callState, setCallState] = useState('idle'); // idle, prompting, calling, ringing, connected
+  const callStateRef = useRef('idle'); // Ref tracking to fix double-call bug
   const [isMasked, setIsMasked] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
+  const callDurationRef = useRef(0); 
   const [isMuted, setIsMuted] = useState(false);
+  
   const peerConnection = useRef(null);
   const localStreamRef = useRef(null);
   const remoteAudioRef = useRef(null);
   const audioContextRef = useRef(null);
   const callDurationTimer = useRef(null);
 
+  const updateCallState = (newState) => {
+    setCallState(newState);
+    callStateRef.current = newState;
+  };
+
   const isGroup = chatData?.isGroup;
   let chatName = "Unknown Channel"; let chatAvatar = null; let memberCount = chatData?.participants?.length || 0;
   
-  // FIXED: Safe participant checks
   const otherUserId = isGroup ? null : chatData?.participants?.find(id => id !== user.uid);
   let someoneIsTyping = false; let typingName = '';
   
@@ -290,7 +304,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     chatAvatar = otherUserAgent?.avatarData || null; 
   }
 
-  // PUBLIC TURN/STUN SERVERS
   const iceServers = {
     iceServers: [
       { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
@@ -301,7 +314,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   useEffect(() => { setMsgLimit(30); setEditingMsg(null); setReplyingTo(null); setInputText(''); }, [threadId]);
   useEffect(() => { decryptionCache.current = {}; }, [encryptionKeys]);
 
-  // --- WebRTC Signaling Listener ---
+  // --- WebRTC Signaling Listener (Fixed Dependency Bug) ---
   useEffect(() => {
     if (isGroup) return;
     const callDocRef = doc(db, 'chat_threads', threadId, 'call_signal', 'data');
@@ -309,18 +322,24 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       const data = snapshot.data();
       if (!data) return;
 
-      if (data.status === 'ringing' && data.callerId !== user.uid && callState === 'idle') {
-        setCallState('ringing');
+      const currentState = callStateRef.current;
+
+      if (data.status === 'ringing' && data.callerId !== user.uid && currentState === 'idle') {
+        updateCallState('ringing');
       } else if (data.status === 'answered' && data.callerId === user.uid && peerConnection.current) {
-        const remoteDesc = new RTCSessionDescription(data.answer);
-        await peerConnection.current.setRemoteDescription(remoteDesc);
-        setCallState('connected'); startCallTimer();
-      } else if (data.status === 'ended' && callState !== 'idle') {
+        if (peerConnection.current.signalingState === "have-local-offer") {
+           const remoteDesc = new RTCSessionDescription(data.answer);
+           await peerConnection.current.setRemoteDescription(remoteDesc);
+           updateCallState('connected'); 
+           startCallTimer();
+        }
+      } else if (data.status === 'ended' && currentState !== 'idle') {
         endCallLocally();
       }
     });
     return () => unsubscribe();
-  }, [threadId, user.uid, callState, isGroup]);
+  }, [threadId, user.uid, isGroup]); 
+  // Notice callState is REMOVED from dependencies so the snapshot doesn't rebuild and drop signals
 
   // --- WebRTC ICE Candidate Listener ---
   useEffect(() => {
@@ -341,7 +360,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   }, [threadId, user.uid, callState]);
 
   const startCall = async (useMask) => {
-    setIsMasked(useMask); setCallState('calling');
+    setIsMasked(useMask); updateCallState('calling');
     peerConnection.current = new RTCPeerConnection(iceServers);
     
     peerConnection.current.onicecandidate = (event) => {
@@ -399,7 +418,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       await peerConnection.current.setLocalDescription(answer);
 
       await updateDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'answered', answer: { type: answer.type, sdp: answer.sdp } });
-      setCallState('connected'); startCallTimer();
+      updateCallState('connected'); startCallTimer();
     } catch (err) { 
       console.error("Answer Call Error:", err);
       alert(`Failed to answer: ${err.message}`); 
@@ -408,7 +427,21 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   };
 
   const endCall = async () => {
+    const currentDuration = callDurationRef.current;
     await setDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'ended' });
+    
+    // Automatically log the call in the chat feed
+    try {
+      const activeKey = encryptionKeys[encryptionKeys.length - 1];
+      const msgText = currentDuration > 0 ? `📞 Audio Call - ${formatCallTime(currentDuration)}` : `📞 Missed Call`;
+      const enc = await encryptText(msgText, activeKey);
+      await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
+        senderId: user.uid, senderName: user.displayName, text: enc, type: 'text', timestamp: Date.now(), replyToId: null, reactions: {}, expiresAt: null, isEdited: false 
+      });
+      await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() });
+      await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() });
+    } catch(e) { console.error("Failed to post call log", e); }
+
     endCallLocally();
   };
 
@@ -416,12 +449,26 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     if (peerConnection.current) { peerConnection.current.close(); peerConnection.current = null; }
     if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(track => track.stop()); localStreamRef.current = null; }
     if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
-    clearInterval(callDurationTimer.current); setCallDuration(0); setIsMuted(false); setCallState('idle');
+    clearInterval(callDurationTimer.current); 
+    setCallDuration(0); 
+    callDurationRef.current = 0;
+    setIsMuted(false); 
+    updateCallState('idle');
   };
 
-  const initiateCallPrompt = () => { setCallState('prompting'); };
+  const initiateCallPrompt = () => { updateCallState('prompting'); };
 
-  const startCallTimer = () => { setCallDuration(0); callDurationTimer.current = setInterval(() => setCallDuration(prev => prev + 1), 1000); };
+  const startCallTimer = () => { 
+    setCallDuration(0); 
+    callDurationRef.current = 0;
+    callDurationTimer.current = setInterval(() => {
+      setCallDuration(prev => {
+         const next = prev + 1;
+         callDurationRef.current = next;
+         return next;
+      });
+    }, 1000); 
+  };
   const formatCallTime = (seconds) => { const m = Math.floor(seconds / 60); const s = seconds % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; };
 
   const toggleMute = () => {
@@ -603,7 +650,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           <div className="flex flex-col w-full max-w-xs gap-3">
             <button onClick={() => startCall(true)} className={`py-4 rounded-xl bg-gradient-to-r ${t.btnGrad} text-white font-bold shadow-[0_0_20px_rgba(0,0,0,0.5)] flex items-center justify-center gap-2`}><MicOff className="w-5 h-5"/> Initiate Masked Call</button>
             <button onClick={() => startCall(false)} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2"><Volume2 className="w-5 h-5"/> Standard Encrypted Call</button>
-            <button onClick={() => setCallState('idle')} className="mt-4 py-3 text-slate-500 hover:text-white font-bold">Cancel</button>
+            <button onClick={() => updateCallState('idle')} className="mt-4 py-3 text-slate-500 hover:text-white font-bold">Cancel</button>
           </div>
         </div>
       )}
@@ -905,7 +952,6 @@ export default function App() {
               if (isGroup) chatName = thread.name || "Group Server";
               else {
                 const otherUserId = thread.participants.find(id => id !== user.uid); const otherUserAgent = usersList.find(u => u.uid === otherUserId);
-                // FIXED: Safe optional chaining for older chats
                 chatName = thread.customName || otherUserAgent?.displayName || thread.participantNames?.[otherUserId] || 'Unknown Agent'; 
                 chatAvatar = otherUserAgent?.avatarData || null;
                 if (otherUserAgent && otherUserAgent.lastSeen && Date.now() - otherUserAgent.lastSeen < 300000) isOnline = true;
