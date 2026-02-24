@@ -8,7 +8,7 @@ import {
   Palette, Reply, X, Smile, Mic, Square, Play, Pause, 
   ChevronLeft, Fingerprint, Search, Plus, Trash2, Settings, 
   Camera, PenLine, RefreshCw, Copy, Paperclip, CheckCheck, Flame, Clock, ChevronDown, Image as ImageIcon,
-  ArrowDown, Sticker, Edit2, Phone, PhoneCall, PhoneOff, MicOff, Volume2
+  ArrowDown, Sticker, Edit2, Phone, PhoneCall, PhoneOff, MicOff, Volume2, Video, VideoOff
 } from 'lucide-react';
 
 // --- Firebase Initialization ---
@@ -63,30 +63,67 @@ const parseMarkdown = (text) => {
   return { __html: html };
 };
 
-// --- Masked Audio (Deep Pitch EQ) ---
-const setupMaskedAudio = async (rawStream) => {
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const source = audioCtx.createMediaStreamSource(rawStream);
-  const destination = audioCtx.createMediaStreamDestination();
+// --- WebRTC Media Pipeline (Audio EQ & Hardware-Safe Video Canvas) ---
+const setupMaskedMedia = async (rawStream, videoMode, useAudioMask) => {
+  const tracks = [];
+  const audioCtx = useAudioMask ? new (window.AudioContext || window.webkitAudioContext)() : null;
+  let canvasInterval = null;
 
-  // 1. Boost deep bass frequencies to simulate a deeper, booming voice
-  const bassBoost = audioCtx.createBiquadFilter();
-  bassBoost.type = 'peaking';
-  bassBoost.frequency.value = 100; // Target the fundamental deep vocal range
-  bassBoost.Q.value = 1.0;
-  bassBoost.gain.value = 15; // 15dB boost
+  // Process Audio
+  if (rawStream.getAudioTracks().length > 0) {
+    if (useAudioMask) {
+      const source = audioCtx.createMediaStreamSource(rawStream);
+      const destination = audioCtx.createMediaStreamDestination();
+      const bassBoost = audioCtx.createBiquadFilter(); bassBoost.type = 'peaking'; bassBoost.frequency.value = 100; bassBoost.Q.value = 1.0; bassBoost.gain.value = 15;
+      const highCut = audioCtx.createBiquadFilter(); highCut.type = 'highshelf'; highCut.frequency.value = 4000; highCut.gain.value = -5;
+      source.connect(bassBoost); bassBoost.connect(highCut); highCut.connect(destination);
+      tracks.push(destination.stream.getAudioTracks()[0]);
+    } else {
+      tracks.push(rawStream.getAudioTracks()[0]);
+    }
+  }
 
-  // 2. Slightly cut the highs to make it sound more hidden/muffled
-  const highCut = audioCtx.createBiquadFilter();
-  highCut.type = 'highshelf';
-  highCut.frequency.value = 4000;
-  highCut.gain.value = -5; // -5dB cut
+  // Process Video
+  if (rawStream.getVideoTracks().length > 0) {
+    if (videoMode === 'raw') {
+      tracks.push(rawStream.getVideoTracks()[0]);
+    } else {
+      const videoEl = document.createElement('video');
+      videoEl.srcObject = new MediaStream([rawStream.getVideoTracks()[0]]);
+      videoEl.muted = true;
+      videoEl.playsInline = true;
+      await videoEl.play();
 
-  source.connect(bassBoost);
-  bassBoost.connect(highCut);
-  highCut.connect(destination);
+      const canvas = document.createElement('canvas');
+      canvas.width = 640; canvas.height = 480;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-  return { processedStream: destination.stream, audioCtx };
+      canvasInterval = setInterval(() => {
+        if (videoMode === 'blur') {
+          ctx.filter = 'blur(15px) contrast(120%)';
+          ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+        } else if (videoMode === 'jam') {
+          ctx.filter = 'grayscale(100%) contrast(180%) brightness(80%)';
+          ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+          
+          // Matrix/Cyberpunk Scanlines
+          ctx.fillStyle = 'rgba(0,0,0,0.3)';
+          for (let i = 0; i < canvas.height; i += 4) ctx.fillRect(0, i, canvas.width, 1);
+          
+          // Static Jitter
+          if (Math.random() > 0.8) {
+            ctx.fillStyle = 'rgba(255,255,255,0.1)';
+            ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 150, 20);
+          }
+        }
+      }, 1000 / 30); // Target 30 FPS
+
+      const canvasStream = canvas.captureStream(30);
+      tracks.push(canvasStream.getVideoTracks()[0]);
+    }
+  }
+
+  return { processedStream: new MediaStream(tracks), audioCtx, canvasInterval };
 };
 
 // --- Media Utils ---
@@ -271,16 +308,18 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   // --- WebRTC States ---
   const [callState, setCallState] = useState('idle'); // idle, prompting, calling, ringing, connected
-  const callStateRef = useRef('idle'); // Ref tracking to fix double-call bug
-  const [isMasked, setIsMasked] = useState(false);
+  const callStateRef = useRef('idle'); 
   const [callDuration, setCallDuration] = useState(0);
   const callDurationRef = useRef(0); 
   const [isMuted, setIsMuted] = useState(false);
+  const [isVideoEnabled, setIsVideoEnabled] = useState(false);
   
   const peerConnection = useRef(null);
   const localStreamRef = useRef(null);
-  const remoteAudioRef = useRef(null);
+  const remoteMediaRef = useRef(null);
+  const localVideoRef = useRef(null);
   const audioContextRef = useRef(null);
+  const canvasIntervalRef = useRef(null);
   const callDurationTimer = useRef(null);
 
   const updateCallState = (newState) => {
@@ -314,7 +353,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   useEffect(() => { setMsgLimit(30); setEditingMsg(null); setReplyingTo(null); setInputText(''); }, [threadId]);
   useEffect(() => { decryptionCache.current = {}; }, [encryptionKeys]);
 
-  // --- WebRTC Signaling Listener (Fixed Dependency Bug) ---
+  // --- WebRTC Signaling Listener ---
   useEffect(() => {
     if (isGroup) return;
     const callDocRef = doc(db, 'chat_threads', threadId, 'call_signal', 'data');
@@ -325,6 +364,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       const currentState = callStateRef.current;
 
       if (data.status === 'ringing' && data.callerId !== user.uid && currentState === 'idle') {
+        setIsVideoEnabled(data.isVideo || false);
         updateCallState('ringing');
       } else if (data.status === 'answered' && data.callerId === user.uid && peerConnection.current) {
         if (peerConnection.current.signalingState === "have-local-offer") {
@@ -339,7 +379,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     });
     return () => unsubscribe();
   }, [threadId, user.uid, isGroup]); 
-  // Notice callState is REMOVED from dependencies so the snapshot doesn't rebuild and drop signals
 
   // --- WebRTC ICE Candidate Listener ---
   useEffect(() => {
@@ -359,8 +398,22 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     return () => unsubscribe();
   }, [threadId, user.uid, callState]);
 
-  const startCall = async (useMask) => {
-    setIsMasked(useMask); updateCallState('calling');
+  // Apply streams to Video Elements once connected
+  useEffect(() => {
+    if (callState === 'connected') {
+      if (localVideoRef.current && localStreamRef.current && isVideoEnabled) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+    }
+  }, [callState, isVideoEnabled]);
+
+  const startCall = async (mode) => {
+    const isVideo = mode === 'video_raw' || mode === 'video_blur' || mode === 'video_jam';
+    const useAudioMask = mode === 'audio_masked';
+    const videoMode = mode.replace('video_', '');
+    
+    setIsVideoEnabled(isVideo);
+    updateCallState('calling');
     peerConnection.current = new RTCPeerConnection(iceServers);
     
     peerConnection.current.onicecandidate = (event) => {
@@ -368,24 +421,31 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     };
 
     peerConnection.current.ontrack = (event) => {
-      if (remoteAudioRef.current) { remoteAudioRef.current.srcObject = event.streams[0]; remoteAudioRef.current.play(); }
+      if (remoteMediaRef.current) { 
+        remoteMediaRef.current.srcObject = event.streams[0]; 
+        remoteMediaRef.current.play(); 
+      }
     };
 
     try {
-      const rawStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (useMask) {
-        const { processedStream, audioCtx } = await setupMaskedAudio(rawStream);
-        audioContextRef.current = audioCtx; localStreamRef.current = rawStream; 
-        processedStream.getTracks().forEach(track => peerConnection.current.addTrack(track, processedStream));
-      } else {
-        localStreamRef.current = rawStream;
-        rawStream.getTracks().forEach(track => peerConnection.current.addTrack(track, rawStream));
-      }
+      const constraints = isVideo ? { audio: true, video: { facingMode: "user", width: 640, height: 480 } } : { audio: true };
+      const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      const { processedStream, audioCtx, canvasInterval } = await setupMaskedMedia(rawStream, videoMode, useAudioMask);
+      
+      audioContextRef.current = audioCtx; 
+      canvasIntervalRef.current = canvasInterval;
+      localStreamRef.current = processedStream; 
+      
+      processedStream.getTracks().forEach(track => peerConnection.current.addTrack(track, processedStream));
 
       const offer = await peerConnection.current.createOffer();
       await peerConnection.current.setLocalDescription(offer);
 
-      await setDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'ringing', callerId: user.uid, offer: { type: offer.type, sdp: offer.sdp }, isMasked: useMask, timestamp: Date.now() });
+      await setDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { 
+        status: 'ringing', callerId: user.uid, offer: { type: offer.type, sdp: offer.sdp }, 
+        isVideo: isVideo, videoMode: videoMode, timestamp: Date.now() 
+      });
       const oldCandidates = await getDocs(collection(db, 'chat_threads', threadId, 'call_candidates'));
       oldCandidates.forEach(c => deleteDoc(c.ref));
 
@@ -402,16 +462,27 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       if (event.candidate) addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { senderId: user.uid, candidate: event.candidate.toJSON() });
     };
     peerConnection.current.ontrack = (event) => {
-      if (remoteAudioRef.current) { remoteAudioRef.current.srcObject = event.streams[0]; remoteAudioRef.current.play(); }
+      if (remoteMediaRef.current) { 
+        remoteMediaRef.current.srcObject = event.streams[0]; 
+        remoteMediaRef.current.play(); 
+      }
     };
 
     try {
-      const rawStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      localStreamRef.current = rawStream;
-      rawStream.getTracks().forEach(track => peerConnection.current.addTrack(track, rawStream));
-
       const callDoc = await getDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'));
       const callData = callDoc.data();
+      
+      // The answerer honors the video request of the caller
+      const constraints = callData.isVideo ? { audio: true, video: { facingMode: "user", width: 640, height: 480 } } : { audio: true };
+      const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      const { processedStream, audioCtx, canvasInterval } = await setupMaskedMedia(rawStream, callData.videoMode, false);
+      
+      audioContextRef.current = audioCtx; 
+      canvasIntervalRef.current = canvasInterval;
+      localStreamRef.current = processedStream;
+      
+      processedStream.getTracks().forEach(track => peerConnection.current.addTrack(track, processedStream));
 
       await peerConnection.current.setRemoteDescription(new RTCSessionDescription(callData.offer));
       const answer = await peerConnection.current.createAnswer();
@@ -430,10 +501,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     const currentDuration = callDurationRef.current;
     await setDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'ended' });
     
-    // Automatically log the call in the chat feed
     try {
       const activeKey = encryptionKeys[encryptionKeys.length - 1];
-      const msgText = currentDuration > 0 ? `📞 Audio Call - ${formatCallTime(currentDuration)}` : `📞 Missed Call`;
+      const callType = isVideoEnabled ? 'Video Call' : 'Audio Call';
+      const msgText = currentDuration > 0 ? `📞 ${callType} - ${formatCallTime(currentDuration)}` : `📞 Missed ${callType}`;
       const enc = await encryptText(msgText, activeKey);
       await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
         senderId: user.uid, senderName: user.displayName, text: enc, type: 'text', timestamp: Date.now(), replyToId: null, reactions: {}, expiresAt: null, isEdited: false 
@@ -449,24 +520,18 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     if (peerConnection.current) { peerConnection.current.close(); peerConnection.current = null; }
     if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(track => track.stop()); localStreamRef.current = null; }
     if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
+    if (canvasIntervalRef.current) { clearInterval(canvasIntervalRef.current); canvasIntervalRef.current = null; }
     clearInterval(callDurationTimer.current); 
-    setCallDuration(0); 
-    callDurationRef.current = 0;
-    setIsMuted(false); 
+    setCallDuration(0); callDurationRef.current = 0; setIsMuted(false); setIsVideoEnabled(false);
     updateCallState('idle');
   };
 
   const initiateCallPrompt = () => { updateCallState('prompting'); };
 
   const startCallTimer = () => { 
-    setCallDuration(0); 
-    callDurationRef.current = 0;
+    setCallDuration(0); callDurationRef.current = 0;
     callDurationTimer.current = setInterval(() => {
-      setCallDuration(prev => {
-         const next = prev + 1;
-         callDurationRef.current = next;
-         return next;
-      });
+      setCallDuration(prev => { const next = prev + 1; callDurationRef.current = next; return next; });
     }, 1000); 
   };
   const formatCallTime = (seconds) => { const m = Math.floor(seconds / 60); const s = seconds % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; };
@@ -475,6 +540,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     if (localStreamRef.current) {
       const audioTrack = localStreamRef.current.getAudioTracks()[0];
       if (audioTrack) { audioTrack.enabled = !audioTrack.enabled; setIsMuted(!audioTrack.enabled); }
+    }
+  };
+
+  const toggleVideo = () => {
+    if (localStreamRef.current) {
+      const videoTrack = localStreamRef.current.getVideoTracks()[0];
+      if (videoTrack) { videoTrack.enabled = !videoTrack.enabled; }
     }
   };
 
@@ -639,51 +711,75 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   return (
     <div className="flex-1 flex flex-col relative bg-[#050508] min-h-0 overflow-x-hidden" onClick={() => { setActiveMenu(null); setIsTimeDropdownOpen(false); setShowStickerPicker(false); }} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
-      <audio ref={remoteAudioRef} autoPlay />
+      
+      {/* Invisible Global Video element used for audio output and remote video sourcing */}
+      <video ref={remoteMediaRef} autoPlay playsInline className="hidden" />
 
       {/* --- WEBRTC CALLING OVERLAYS --- */}
       {callState === 'prompting' && (
-        <div className="absolute inset-0 z-[500] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-fade-in">
-          <ShieldAlert className={`w-16 h-16 ${t.text} mb-6`} />
-          <h2 className="text-2xl font-mono text-white mb-2 text-center">Secure Uplink</h2>
-          <p className="text-sm text-slate-400 mb-8 text-center max-w-sm">Apply cryptographic voice masking to your audio stream? This severely distorts the audio to prevent voice-print identification.</p>
-          <div className="flex flex-col w-full max-w-xs gap-3">
-            <button onClick={() => startCall(true)} className={`py-4 rounded-xl bg-gradient-to-r ${t.btnGrad} text-white font-bold shadow-[0_0_20px_rgba(0,0,0,0.5)] flex items-center justify-center gap-2`}><MicOff className="w-5 h-5"/> Initiate Masked Call</button>
-            <button onClick={() => startCall(false)} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2"><Volume2 className="w-5 h-5"/> Standard Encrypted Call</button>
-            <button onClick={() => updateCallState('idle')} className="mt-4 py-3 text-slate-500 hover:text-white font-bold">Cancel</button>
+        <div className="absolute inset-0 z-[500] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-fade-in overflow-y-auto">
+          <ShieldAlert className={`w-12 h-12 ${t.text} mb-4`} />
+          <h2 className="text-2xl font-mono text-white mb-6 text-center">Secure Uplink</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-lg mb-8">
+            <button onClick={() => startCall('audio_raw')} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2 border border-white/5"><Phone className="w-5 h-5"/> Standard Audio</button>
+            <button onClick={() => startCall('audio_masked')} className={`py-4 rounded-xl bg-gradient-to-r ${t.btnGrad} text-white font-bold shadow-lg flex items-center justify-center gap-2`}><MicOff className="w-5 h-5"/> Masked Audio</button>
+            <button onClick={() => startCall('video_raw')} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2 border border-white/5"><Video className="w-5 h-5"/> Raw Video Feed</button>
+            <button onClick={() => startCall('video_blur')} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2 border border-blue-500/30"><VideoOff className="w-5 h-5"/> Privacy Blur</button>
+            <button onClick={() => startCall('video_jam')} className="py-4 md:col-span-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold transition-colors flex items-center justify-center gap-2 border border-red-500/30"><ShieldCheck className="w-5 h-5"/> Signal Jam Video</button>
           </div>
+          <button onClick={() => updateCallState('idle')} className="py-3 px-6 rounded-lg text-slate-500 hover:text-white font-bold hover:bg-white/5 transition-all">Cancel Request</button>
         </div>
       )}
 
       {callState === 'calling' && (
         <div className="absolute inset-0 z-[500] bg-[#0a0a0f] flex flex-col items-center justify-center p-6 animate-fade-in">
-          <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-pulse`}><PhoneCall className={`w-10 h-10 ${t.text}`} /></div>
-          <h2 className="text-xl font-bold text-white mb-2">Calling Agent...</h2>
-          <p className="text-xs text-slate-500 mb-12">Establishing P2P WebRTC Handshake</p>
+          <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-pulse`}>{isVideoEnabled ? <Video className={`w-10 h-10 ${t.text}`} /> : <PhoneCall className={`w-10 h-10 ${t.text}`} />}</div>
+          <h2 className="text-xl font-bold text-white mb-2">Establishing Uplink...</h2>
+          <p className="text-xs text-slate-500 mb-12">P2P Handshake initiated</p>
           <button onClick={endCall} className="w-16 h-16 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-6 h-6 text-white" /></button>
         </div>
       )}
 
       {callState === 'ringing' && (
         <div className="absolute inset-0 z-[500] bg-[#0a0a0f] flex flex-col items-center justify-center p-6 animate-fade-in">
-          <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-bounce`}><Phone className={`w-10 h-10 ${t.text}`} /></div>
-          <h2 className="text-xl font-bold text-white mb-2">Incoming Secure Call</h2>
-          <p className="text-xs text-slate-500 mb-12">End-to-End Encrypted Voice</p>
+          <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-bounce`}>{isVideoEnabled ? <Video className={`w-10 h-10 ${t.text}`} /> : <Phone className={`w-10 h-10 ${t.text}`} />}</div>
+          <h2 className="text-xl font-bold text-white mb-2">Incoming Secure {isVideoEnabled ? 'Video' : 'Audio'}</h2>
+          <p className="text-xs text-slate-500 mb-12">End-to-End Encrypted</p>
           <div className="flex gap-8">
             <button onClick={endCall} className="w-16 h-16 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-6 h-6 text-white" /></button>
-            <button onClick={answerCall} className="w-16 h-16 bg-green-500 hover:bg-green-400 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-transform hover:scale-110 animate-pulse"><Phone className="w-6 h-6 text-white" /></button>
+            <button onClick={answerCall} className="w-16 h-16 bg-green-500 hover:bg-green-400 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-transform hover:scale-110 animate-pulse">{isVideoEnabled ? <Video className="w-6 h-6 text-white" /> : <Phone className="w-6 h-6 text-white" />}</button>
           </div>
         </div>
       )}
 
       {callState === 'connected' && (
-        <div className="absolute inset-0 z-[500] bg-[#0a0a0f] flex flex-col items-center justify-center p-6 animate-fade-in">
-          <div className={`w-24 h-24 rounded-full bg-black border ${isMuted ? 'border-amber-500/50' : 'border-green-500/50'} flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(34,197,94,0.2)]`}><User className={`w-10 h-10 ${isMuted ? 'text-amber-500' : 'text-green-400'}`} /></div>
-          <h2 className="text-xl font-bold text-white mb-1">Link Established</h2>
-          <p className="text-2xl font-mono text-green-400 mb-12">{formatCallTime(callDuration)}</p>
-          <div className="flex gap-6">
-             <button onClick={toggleMute} className={`w-16 h-16 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${isMuted ? 'bg-amber-500/20 text-amber-500 border border-amber-500/50' : 'bg-white/10 text-white'}`}>{isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}</button>
-             <button onClick={endCall} className="w-16 h-16 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-6 h-6 text-white" /></button>
+        <div className="absolute inset-0 z-[500] bg-[#0a0a0f] flex flex-col items-center justify-center animate-fade-in overflow-hidden">
+          {isVideoEnabled ? (
+            <>
+              {/* Remote Video (Main Feed) */}
+              <video 
+                ref={el => { if (el && remoteMediaRef.current) el.srcObject = remoteMediaRef.current.srcObject; }} 
+                autoPlay playsInline 
+                className="w-full h-full object-cover" 
+              />
+              {/* Local Video (Picture-in-Picture) */}
+              <div className="absolute top-6 right-6 w-28 h-40 md:w-40 md:h-56 bg-black border border-white/20 rounded-xl overflow-hidden shadow-2xl z-10">
+                <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className={`w-24 h-24 rounded-full bg-black border ${isMuted ? 'border-amber-500/50' : 'border-green-500/50'} flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(34,197,94,0.2)]`}><User className={`w-10 h-10 ${isMuted ? 'text-amber-500' : 'text-green-400'}`} /></div>
+              <h2 className="text-xl font-bold text-white mb-1">Link Established</h2>
+            </>
+          )}
+
+          {/* Call Controls Overlay */}
+          <div className={`absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-6 px-8 py-4 bg-black/60 backdrop-blur-md rounded-full border border-white/10 ${isVideoEnabled ? 'shadow-2xl' : ''}`}>
+             <span className="text-mono text-green-400 font-bold mr-2">{formatCallTime(callDuration)}</span>
+             <button onClick={toggleMute} className={`w-12 h-12 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${isMuted ? 'bg-amber-500/20 text-amber-500 border border-amber-500/50' : 'bg-white/10 text-white'}`}>{isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}</button>
+             {isVideoEnabled && ( <button onClick={toggleVideo} className="w-12 h-12 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/10 text-white"><Video className="w-5 h-5" /></button> )}
+             <button onClick={endCall} className="w-12 h-12 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-5 h-5 text-white" /></button>
           </div>
         </div>
       )}
@@ -744,7 +840,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {!isGroup && (<button onClick={initiateCallPrompt} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-green-400 hover:bg-green-500/10 mr-1`} title="Secure Voice Call"><PhoneCall className="w-4 h-4" /></button>)}
+          {!isGroup && (<button onClick={initiateCallPrompt} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-green-400 hover:bg-green-500/10 mr-1`} title="Establish Secure Uplink"><Video className="w-4 h-4" /></button>)}
           <button onClick={changeKey} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-white hover:bg-white/5`} title="Update Encryption Key"><Key className="w-4 h-4" /></button>
           <button onClick={() => setShowBurnModal(true)} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-orange-400 hover:bg-orange-500/10`} title="Send Burn Message"><Flame className="w-4 h-4" /></button>
           <button onClick={() => { setShowSearch(!showSearch); setSearchQuery(''); }} className={`p-2 rounded-lg transition-all ${showSearch ? 'text-white bg-white/10' : 'text-slate-500 hover:text-white hover:bg-white/5'}`} title="Search Messages"><Search className="w-4 h-4" /></button>
