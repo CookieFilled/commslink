@@ -8,7 +8,7 @@ import {
   Palette, Reply, X, Smile, Mic, Square, Play, Pause, 
   ChevronLeft, Fingerprint, Search, Plus, Trash2, Settings, 
   Camera, PenLine, RefreshCw, Copy, Paperclip, CheckCheck, Flame, Clock, ChevronDown, Image as ImageIcon,
-  ArrowDown, Sticker, Edit2, Phone, PhoneCall, PhoneOff, MicOff, Volume2, Video, VideoOff
+  ArrowDown, Sticker, Edit2, Phone, PhoneCall, PhoneOff, MicOff, Video, VideoOff
 } from 'lucide-react';
 
 // --- Firebase Initialization ---
@@ -63,63 +63,34 @@ const parseMarkdown = (text) => {
   return { __html: html };
 };
 
-// --- WebRTC Media Pipeline (Audio EQ & Hardware-Safe Video Canvas) ---
-const setupMaskedMedia = async (rawStream, videoMode, useAudioMask) => {
-  const tracks = [];
-  const audioCtx = useAudioMask ? new (window.AudioContext || window.webkitAudioContext)() : null;
-  let canvasInterval = null;
+// --- WebRTC Media Pipeline (Native Streams Only) ---
+const setupMaskedMedia = async (rawStream, useAudioMask) => {
+  let audioCtx = null;
+  let processedStream = rawStream;
 
-  if (rawStream.getAudioTracks().length > 0) {
-    if (useAudioMask) {
-      const source = audioCtx.createMediaStreamSource(rawStream);
-      const destination = audioCtx.createMediaStreamDestination();
-      const bassBoost = audioCtx.createBiquadFilter(); bassBoost.type = 'peaking'; bassBoost.frequency.value = 100; bassBoost.Q.value = 1.0; bassBoost.gain.value = 15;
-      const highCut = audioCtx.createBiquadFilter(); highCut.type = 'highshelf'; highCut.frequency.value = 4000; highCut.gain.value = -5;
-      source.connect(bassBoost); bassBoost.connect(highCut); highCut.connect(destination);
-      tracks.push(destination.stream.getAudioTracks()[0]);
-    } else {
-      tracks.push(rawStream.getAudioTracks()[0]);
-    }
-  }
-
-  if (rawStream.getVideoTracks().length > 0) {
-    if (videoMode === 'raw') {
+  if (useAudioMask && rawStream.getAudioTracks().length > 0) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(rawStream);
+    const destination = audioCtx.createMediaStreamDestination();
+    
+    const bassBoost = audioCtx.createBiquadFilter(); 
+    bassBoost.type = 'peaking'; bassBoost.frequency.value = 100; bassBoost.Q.value = 1.0; bassBoost.gain.value = 15;
+    
+    const highCut = audioCtx.createBiquadFilter(); 
+    highCut.type = 'highshelf'; highCut.frequency.value = 4000; highCut.gain.value = -5;
+    
+    source.connect(bassBoost); 
+    bassBoost.connect(highCut); 
+    highCut.connect(destination);
+    
+    const tracks = [destination.stream.getAudioTracks()[0]];
+    if (rawStream.getVideoTracks().length > 0) {
       tracks.push(rawStream.getVideoTracks()[0]);
-    } else {
-      const videoEl = document.createElement('video');
-      videoEl.srcObject = new MediaStream([rawStream.getVideoTracks()[0]]);
-      videoEl.muted = true;
-      videoEl.playsInline = true;
-      videoEl.play().catch(e => console.warn("Background video blocked:", e));
-
-      const canvas = document.createElement('canvas');
-      canvas.width = 640; canvas.height = 480;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-      canvasInterval = setInterval(() => {
-        if (videoMode === 'blur') {
-          ctx.filter = 'blur(15px) contrast(120%)';
-          ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-        } else if (videoMode === 'jam') {
-          ctx.filter = 'grayscale(100%) contrast(180%) brightness(80%)';
-          ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-          
-          ctx.fillStyle = 'rgba(0,0,0,0.3)';
-          for (let i = 0; i < canvas.height; i += 4) ctx.fillRect(0, i, canvas.width, 1);
-          
-          if (Math.random() > 0.8) {
-            ctx.fillStyle = 'rgba(255,255,255,0.1)';
-            ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 150, 20);
-          }
-        }
-      }, 1000 / 30);
-
-      const canvasStream = canvas.captureStream(30);
-      tracks.push(canvasStream.getVideoTracks()[0]);
     }
+    processedStream = new MediaStream(tracks);
   }
 
-  return { processedStream: new MediaStream(tracks), audioCtx, canvasInterval };
+  return { processedStream, audioCtx };
 };
 
 // --- Media Utils ---
@@ -309,20 +280,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
   const [isLocalVideoOff, setIsLocalVideoOff] = useState(false);
-  
-  // Hardware-Safe DOM Hooks
-  const remoteMediaRef = useRef(null);
-  const localVideoRef = useRef(null);
-  const remoteStreamRef = useRef(null);
+  const [remoteStream, setRemoteStream] = useState(null);
   
   const peerConnection = useRef(null);
   const localStreamRef = useRef(null);
   const audioContextRef = useRef(null);
-  const canvasIntervalRef = useRef(null);
   const callDurationTimer = useRef(null);
-  
-  // Candidate Queue to fix WebRTC race conditions
-  const pendingCandidates = useRef([]);
+  const pendingCandidates = useRef([]); // ICE Candidate Queue
 
   const updateCallState = (newState) => {
     setCallState(newState);
@@ -331,42 +295,24 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   const isGroup = chatData?.isGroup;
   let chatName = "Unknown Channel"; let chatAvatar = null; let memberCount = chatData?.participants?.length || 0;
-  
   const otherUserId = isGroup ? null : chatData?.participants?.find(id => id !== user.uid);
   let someoneIsTyping = false; let typingName = '';
   
   if (chatData?.typing) { const typists = Object.keys(chatData.typing).filter(id => id !== user.uid && chatData.typing[id]); if (typists.length > 0) { someoneIsTyping = true; const typistObj = usersList.find(u => u.uid === typists[0]); typingName = typistObj ? typistObj.displayName : 'Agent'; } }
   
-  if (isGroup) { 
-    chatName = chatData?.name || "Group Server"; 
-  } else { 
-    const otherUserAgent = usersList.find(u => u.uid === otherUserId); 
-    chatName = chatData?.customName || otherUserAgent?.displayName || chatData?.participantNames?.[otherUserId] || 'Unknown Agent'; 
-    chatAvatar = otherUserAgent?.avatarData || null; 
-  }
+  if (isGroup) { chatName = chatData?.name || "Group Server"; } 
+  else { const otherUserAgent = usersList.find(u => u.uid === otherUserId); chatName = chatData?.customName || otherUserAgent?.displayName || chatData?.participantNames?.[otherUserId] || 'Unknown Agent'; chatAvatar = otherUserAgent?.avatarData || null; }
 
+  // Simplified STUN servers (removed free TURN to prevent packet drops)
   const iceServers = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }
+      { urls: 'stun:stun1.l.google.com:19302' }
     ]
   };
 
   useEffect(() => { setMsgLimit(30); setEditingMsg(null); setReplyingTo(null); setInputText(''); }, [threadId]);
   useEffect(() => { decryptionCache.current = {}; }, [encryptionKeys]);
-
-  // Safely mount streams to the DOM when connection opens
-  useEffect(() => {
-    if (callState === 'connected') {
-       if (remoteMediaRef.current && remoteStreamRef.current && remoteMediaRef.current.srcObject !== remoteStreamRef.current) {
-           remoteMediaRef.current.srcObject = remoteStreamRef.current;
-       }
-       if (localVideoRef.current && localStreamRef.current && localVideoRef.current.srcObject !== localStreamRef.current) {
-           localVideoRef.current.srcObject = localStreamRef.current;
-       }
-    }
-  }, [callState, isVideoEnabled]);
 
   // --- WebRTC Signaling Listener ---
   useEffect(() => {
@@ -386,7 +332,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
            const remoteDesc = new RTCSessionDescription(data.answer);
            await peerConnection.current.setRemoteDescription(remoteDesc);
            
-           // Release queued candidates
+           // Release queued ICE candidates now that handshake is done
            pendingCandidates.current.forEach(c => peerConnection.current.addIceCandidate(c).catch(console.error));
            pendingCandidates.current = [];
            
@@ -400,7 +346,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     return () => unsubscribe();
   }, [threadId, user.uid, isGroup]); 
 
-  // --- WebRTC ICE Candidate Listener (Fixes Race Condition) ---
+  // --- WebRTC ICE Candidate Listener ---
   useEffect(() => {
     if (!peerConnection.current || callState === 'idle') return;
     const q = query(collection(db, 'chat_threads', threadId, 'call_candidates'));
@@ -411,7 +357,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           if (data.senderId !== user.uid && peerConnection.current) {
             const candidate = new RTCIceCandidate(data.candidate);
             if (peerConnection.current.remoteDescription) {
-                peerConnection.current.addIceCandidate(candidate).catch(e => console.error("ICE err", e));
+                peerConnection.current.addIceCandidate(candidate).catch(e => console.error("ICE error:", e));
             } else {
                 pendingCandidates.current.push(candidate);
             }
@@ -423,33 +369,34 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   }, [threadId, user.uid, callState]);
 
   const startCall = async (mode) => {
-    const isVideo = mode === 'video_raw' || mode === 'video_blur' || mode === 'video_jam';
+    const isVideo = mode === 'video_raw';
     const useAudioMask = mode === 'audio_masked';
-    const videoMode = mode.replace('video_', '');
     
     setIsVideoEnabled(isVideo);
     updateCallState('calling');
     peerConnection.current = new RTCPeerConnection(iceServers);
     
     peerConnection.current.onicecandidate = (event) => {
-      if (event.candidate) addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { senderId: user.uid, candidate: event.candidate.toJSON() });
+      if (event.candidate) {
+        addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { 
+          senderId: user.uid, candidate: event.candidate.toJSON() 
+        }).catch(err => console.error("Firebase Rule Blocked ICE:", err));
+      }
     };
 
     peerConnection.current.ontrack = (event) => {
-      remoteStreamRef.current = event.streams[0];
-      if (remoteMediaRef.current && callStateRef.current === 'connected') { 
-        remoteMediaRef.current.srcObject = event.streams[0]; 
+      if (event.streams && event.streams[0]) {
+        setRemoteStream(event.streams[0]);
       }
     };
 
     try {
-      const constraints = isVideo ? { audio: true, video: { facingMode: "user", width: 640, height: 480 } } : { audio: true };
+      const constraints = isVideo ? { audio: true, video: { facingMode: "user" } } : { audio: true };
       const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
       
-      const { processedStream, audioCtx, canvasInterval } = await setupMaskedMedia(rawStream, videoMode, useAudioMask);
+      const { processedStream, audioCtx } = await setupMaskedMedia(rawStream, useAudioMask);
       
       audioContextRef.current = audioCtx; 
-      canvasIntervalRef.current = canvasInterval;
       localStreamRef.current = processedStream; 
       
       processedStream.getTracks().forEach(track => peerConnection.current.addTrack(track, processedStream));
@@ -459,12 +406,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
       await setDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { 
         status: 'ringing', callerId: user.uid, offer: { type: offer.type, sdp: offer.sdp }, 
-        isVideo: isVideo, videoMode: videoMode, timestamp: Date.now() 
-      });
+        isVideo: isVideo, timestamp: Date.now() 
+      }).catch(err => console.error("Firebase Rule Blocked Signal:", err));
       
-      // Cleanup old candidates
-      const oldCandidates = await getDocs(collection(db, 'chat_threads', threadId, 'call_candidates'));
-      oldCandidates.forEach(c => deleteDoc(c.ref));
+      // Cleanup old candidates safely
+      getDocs(collection(db, 'chat_threads', threadId, 'call_candidates')).then(old => {
+        old.forEach(c => deleteDoc(c.ref));
+      });
 
     } catch (err) { 
       console.error("Call Setup Error:", err);
@@ -475,13 +423,18 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   const answerCall = async () => {
     peerConnection.current = new RTCPeerConnection(iceServers);
+    
     peerConnection.current.onicecandidate = (event) => {
-      if (event.candidate) addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { senderId: user.uid, candidate: event.candidate.toJSON() });
+      if (event.candidate) {
+        addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { 
+          senderId: user.uid, candidate: event.candidate.toJSON() 
+        }).catch(err => console.error("Firebase Rule Blocked ICE:", err));
+      }
     };
+
     peerConnection.current.ontrack = (event) => {
-      remoteStreamRef.current = event.streams[0];
-      if (remoteMediaRef.current && callStateRef.current === 'connected') { 
-        remoteMediaRef.current.srcObject = event.streams[0]; 
+      if (event.streams && event.streams[0]) {
+        setRemoteStream(event.streams[0]);
       }
     };
 
@@ -489,20 +442,18 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       const callDoc = await getDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'));
       const callData = callDoc.data();
       
-      const constraints = callData.isVideo ? { audio: true, video: { facingMode: "user", width: 640, height: 480 } } : { audio: true };
+      const constraints = callData.isVideo ? { audio: true, video: { facingMode: "user" } } : { audio: true };
       const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
       
-      const { processedStream, audioCtx, canvasInterval } = await setupMaskedMedia(rawStream, callData.videoMode, false);
+      const { processedStream, audioCtx } = await setupMaskedMedia(rawStream, false);
       
       audioContextRef.current = audioCtx; 
-      canvasIntervalRef.current = canvasInterval;
       localStreamRef.current = processedStream;
       
       processedStream.getTracks().forEach(track => peerConnection.current.addTrack(track, processedStream));
 
       await peerConnection.current.setRemoteDescription(new RTCSessionDescription(callData.offer));
       
-      // Release queued candidates
       pendingCandidates.current.forEach(c => peerConnection.current.addIceCandidate(c).catch(console.error));
       pendingCandidates.current = [];
 
@@ -541,14 +492,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     if (peerConnection.current) { peerConnection.current.close(); peerConnection.current = null; }
     if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(track => track.stop()); localStreamRef.current = null; }
     if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
-    if (canvasIntervalRef.current) { clearInterval(canvasIntervalRef.current); canvasIntervalRef.current = null; }
+    
     clearInterval(callDurationTimer.current); 
-    
     pendingCandidates.current = [];
-    remoteStreamRef.current = null;
-    if(remoteMediaRef.current) remoteMediaRef.current.srcObject = null;
-    if(localVideoRef.current) localVideoRef.current.srcObject = null;
-    
+    setRemoteStream(null);
     setCallDuration(0); callDurationRef.current = 0; setIsMuted(false); setIsVideoEnabled(false); setIsLocalVideoOff(false);
     updateCallState('idle');
   };
@@ -742,25 +689,15 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   return (
     <div className="flex-1 flex flex-col relative bg-[#050508] min-h-0 overflow-x-hidden" onClick={() => { setActiveMenu(null); setIsTimeDropdownOpen(false); setShowStickerPicker(false); }} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
       
-      {/* Universal Audio/Video Anchor (Fixes the React Mounting Bug) */}
-      <video 
-        ref={remoteMediaRef} 
-        autoPlay 
-        playsInline 
-        className={`absolute top-0 left-0 object-cover transition-opacity duration-300 ${callState === 'connected' && isVideoEnabled ? 'w-full h-full opacity-100 z-[490]' : 'w-1 h-1 opacity-0 pointer-events-none -z-10'}`} 
-      />
-
       {/* --- WEBRTC CALLING OVERLAYS --- */}
       {callState === 'prompting' && (
         <div className="absolute inset-0 z-[500] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-fade-in overflow-y-auto">
           <ShieldAlert className={`w-12 h-12 ${t.text} mb-4`} />
           <h2 className="text-2xl font-mono text-white mb-6 text-center">Secure Uplink</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-lg mb-8">
+          <div className="flex flex-col gap-3 w-full max-w-xs mb-8">
             <button onClick={() => startCall('audio_raw')} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2 border border-white/5"><Phone className="w-5 h-5"/> Standard Audio</button>
             <button onClick={() => startCall('audio_masked')} className={`py-4 rounded-xl bg-gradient-to-r ${t.btnGrad} text-white font-bold shadow-lg flex items-center justify-center gap-2`}><MicOff className="w-5 h-5"/> Masked Audio</button>
-            <button onClick={() => startCall('video_raw')} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2 border border-white/5"><Video className="w-5 h-5"/> Raw Video Feed</button>
-            <button onClick={() => startCall('video_blur')} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2 border border-blue-500/30"><VideoOff className="w-5 h-5"/> Privacy Blur</button>
-            <button onClick={() => startCall('video_jam')} className="py-4 md:col-span-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold transition-colors flex items-center justify-center gap-2 border border-red-500/30"><ShieldCheck className="w-5 h-5"/> Signal Jam Video</button>
+            <button onClick={() => startCall('video_raw')} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2 border border-white/5"><Video className="w-5 h-5"/> Standard Video</button>
           </div>
           <button onClick={() => updateCallState('idle')} className="py-3 px-6 rounded-lg text-slate-500 hover:text-white font-bold hover:bg-white/5 transition-all">Cancel Request</button>
         </div>
@@ -788,13 +725,48 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       )}
 
       {callState === 'connected' && (
-        <div className={`absolute inset-0 z-[500] flex flex-col items-center justify-center animate-fade-in overflow-hidden ${isVideoEnabled ? 'bg-transparent' : 'bg-[#0a0a0f]'}`}>
+        <div className={`absolute inset-0 z-[500] flex flex-col items-center justify-center animate-fade-in overflow-hidden ${isVideoEnabled ? 'bg-[#050508]' : 'bg-[#0a0a0f]'}`}>
           {isVideoEnabled ? (
-            <div className="absolute top-6 right-6 w-28 h-40 md:w-40 md:h-56 bg-black border border-white/20 rounded-xl overflow-hidden shadow-2xl z-10">
-              <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
-            </div>
+            <>
+              {/* Remote Video Stream */}
+              <video 
+                autoPlay 
+                playsInline 
+                ref={(videoNode) => {
+                  if (videoNode && remoteStream && videoNode.srcObject !== remoteStream) {
+                    videoNode.srcObject = remoteStream;
+                  }
+                }}
+                className="w-full h-full object-contain bg-black" 
+              />
+              
+              {/* Local Picture-in-Picture */}
+              <div className="absolute top-6 right-6 w-28 h-40 md:w-40 md:h-56 bg-black border border-white/20 rounded-xl overflow-hidden shadow-2xl z-10">
+                <video 
+                  autoPlay 
+                  playsInline 
+                  muted 
+                  ref={(videoNode) => {
+                    if (videoNode && localStreamRef.current && videoNode.srcObject !== localStreamRef.current) {
+                      videoNode.srcObject = localStreamRef.current;
+                    }
+                  }}
+                  className="w-full h-full object-cover transform scale-x-[-1]" 
+                />
+              </div>
+            </>
           ) : (
             <>
+              {/* Audio Only Mode */}
+              <audio 
+                autoPlay 
+                playsInline 
+                ref={(audioNode) => {
+                  if (audioNode && remoteStream && audioNode.srcObject !== remoteStream) {
+                    audioNode.srcObject = remoteStream;
+                  }
+                }}
+              />
               <div className={`w-24 h-24 rounded-full bg-black border ${isMuted ? 'border-amber-500/50' : 'border-green-500/50'} flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(34,197,94,0.2)]`}><User className={`w-10 h-10 ${isMuted ? 'text-amber-500' : 'text-green-400'}`} /></div>
               <h2 className="text-xl font-bold text-white mb-1">Link Established</h2>
             </>
@@ -937,168 +909,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           {isRecording ? ( <button onClick={stopRecording} className="bg-red-600 hover:bg-red-500 p-3 rounded-xl text-white transition-colors shadow-lg shadow-red-500/20 shrink-0"><Square className="w-5 h-5 fill-current" /></button> ) : ( <button onClick={handleSendText} disabled={(!inputText.trim() && !isUploading) || isUploading} className={`bg-gradient-to-r ${t.sendBtn} p-3 rounded-xl text-white disabled:opacity-50 transition-all ${t.glow} hover:-translate-y-0.5 active:scale-95 shrink-0`}><Send className="w-5 h-5 ml-0.5" /></button> )}
         </div>
       </div>
-    </div>
-  );
-};
-
-// --- 4. MAIN APP ROUTER ---
-export default function App() {
-  const [user, setUser] = useState(null); const [currentUserData, setCurrentUserData] = useState(null); const [usersList, setUsersList] = useState([]);
-  const [chatThreads, setChatThreads] = useState([]); const [activeChat, setActiveChat] = useState(null); const [encryptionKeys, setEncryptionKeys] = useState([]); 
-  const [themeMode, setThemeMode] = useState(() => localStorage.getItem('commslink_theme') || 'cyberpunk'); const t = themeStyles[themeMode];
-  const [showKeyModal, setShowKeyModal] = useState(false); const [showProfileModal, setShowProfileModal] = useState(false); const [targetThread, setTargetThread] = useState(null); const [tempKey, setTempKey] = useState('');
-  const [connectMode, setConnectMode] = useState('agent'); const [searchAgentId, setSearchAgentId] = useState(''); const [groupNameInput, setGroupNameInput] = useState(''); const [isSearching, setIsSearching] = useState(false);
-  const [editName, setEditName] = useState(''); const [isSavingProfile, setIsSavingProfile] = useState(false); const avatarInputRef = useRef(null); const [copiedId, setCopiedId] = useState(false);
-
-  useEffect(() => { const unsub = onAuthStateChanged(auth, async (u) => { setUser(u); if (u) await updateDoc(doc(db, 'users', u.uid), { lastSeen: Date.now() }).catch(()=>{}); }); return () => unsub(); }, []);
-  useEffect(() => { if (!user) return; const unsub = onSnapshot(collection(db, 'users'), (snapshot) => { const others = []; snapshot.forEach(doc => { if (doc.id === user.uid) { setCurrentUserData(doc.data()); if (!editName) setEditName(doc.data().displayName || ''); } else others.push(doc.data()); }); setUsersList(others); }); return () => unsub(); }, [user]);
-  useEffect(() => { if (!user) return; const q = query(collection(db, 'chat_threads'), where('participants', 'array-contains', user.uid)); const unsub = onSnapshot(q, (snapshot) => { const threads = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); threads.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0)); setChatThreads(threads); }); return () => unsub(); }, [user]);
-
-  useEffect(() => {
-    const handlePopState = () => { if (activeChat) setActiveChat(null); };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeChat]);
-
-  const toggleTheme = () => { const modes = Object.keys(themeStyles); const nextMode = modes[(modes.indexOf(themeMode) + 1) % modes.length]; setThemeMode(nextMode); localStorage.setItem('commslink_theme', nextMode); };
-  const handleLogout = () => { signOut(auth); setActiveChat(null); };
-  const handleUpdateProfile = async (e) => { e.preventDefault(); if (!editName.trim()) return; setIsSavingProfile(true); try { await updateDoc(doc(db, 'users', user.uid), { displayName: editName }); await updateProfile(user, { displayName: editName }); setShowProfileModal(false); } catch (err) { alert("Failed to update profile."); } setIsSavingProfile(false); };
-  const handleAvatarChange = async (e) => { const file = e.target.files[0]; if (!file) return; try { const b64 = await compressAvatar(file); await updateDoc(doc(db, 'users', user.uid), { avatarData: b64 }); } catch (err) { alert("Failed to update avatar."); } };
-  const copyAgentId = () => { if (currentUserData?.agentId) { navigator.clipboard.writeText(currentUserData.agentId); setCopiedId(true); setTimeout(() => setCopiedId(false), 2000); } };
-  const generateRandomGroup = () => { const adj = ['silent', 'dark', 'hidden', 'crypto', 'neon', 'shadow']; const nouns = ['vault', 'nexus', 'ghost', 'signal', 'pulse', 'void']; setGroupNameInput(`${adj[Math.floor(Math.random() * adj.length)]}-${nouns[Math.floor(Math.random() * nouns.length)]}-${Math.floor(1000 + Math.random() * 9000)}`); };
-  const handleGroupJoin = async (e) => { e.preventDefault(); if (!groupNameInput.trim()) return; setIsSearching(true); try { const safeGroupId = groupNameInput.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'); const groupRef = doc(db, 'chat_threads', safeGroupId); const groupSnap = await getDoc(groupRef); if (groupSnap.exists()) { if (!groupSnap.data().participants.includes(user.uid)) { await updateDoc(groupRef, { participants: arrayUnion(user.uid) }); } } else { await setDoc(groupRef, { isGroup: true, name: groupNameInput.trim(), participants: [user.uid], createdAt: Date.now(), lastActivity: Date.now() }); alert(`Successfully created new server: ${groupNameInput.trim()}`); } setGroupNameInput(''); triggerChatEntry({ id: safeGroupId, isGroup: true, name: groupNameInput.trim() }); } catch (err) { alert("Failed to connect to group."); } setIsSearching(false); };
-  const handleSearchAndCreateChat = async (e) => { e.preventDefault(); if (!searchAgentId.trim()) return; setIsSearching(true); try { const q = query(collection(db, 'users'), where('agentId', '==', searchAgentId.trim().toLowerCase())); const snap = await getDocs(q); if (snap.empty) { alert("Agent ID not found in the network."); setIsSearching(false); return; } const targetAgent = snap.docs[0].data(); if (targetAgent.uid === user.uid) { alert("You cannot start a chat with yourself."); setIsSearching(false); return; } const newThreadRef = await addDoc(collection(db, 'chat_threads'), { isGroup: false, participants: [user.uid, targetAgent.uid], participantNames: { [user.uid]: user.displayName, [targetAgent.uid]: targetAgent.displayName }, createdAt: Date.now(), lastActivity: Date.now(), lastRead: { [user.uid]: Date.now(), [targetAgent.uid]: 0 } }); setSearchAgentId(''); triggerChatEntry({ id: newThreadRef.id, participants: [user.uid, targetAgent.uid] }); } catch (err) { console.error(err); } setIsSearching(false); };
-
-  const triggerChatEntry = (thread) => {
-    let keys = JSON.parse(localStorage.getItem('commslink_keys') || '{}')[thread.id];
-    if (keys) { 
-      if (typeof keys === 'string') keys = [keys]; 
-      setEncryptionKeys(keys); 
-      setActiveChat(thread); 
-      try { window.history.pushState({ chat: thread.id }, ''); } catch(e){} 
-    } 
-    else { setTargetThread(thread); setTempKey(''); setShowKeyModal(true); }
-  };
-  const handleChangeKey = () => { setTargetThread(activeChat); setTempKey(''); setShowKeyModal(true); };
-  const confirmChatEntry = (e) => { e.preventDefault(); if (!tempKey.trim()) return; const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}'); let currentKeys = savedKeys[targetThread.id] || []; if (typeof currentKeys === 'string') currentKeys = [currentKeys]; if (!currentKeys.includes(tempKey.trim())) currentKeys.push(tempKey.trim()); savedKeys[targetThread.id] = currentKeys; localStorage.setItem('commslink_keys', JSON.stringify(savedKeys)); setEncryptionKeys(currentKeys); setActiveChat(targetThread); setShowKeyModal(false); try { window.history.pushState({ chat: targetThread.id }, ''); } catch(e){} };
-
-  const handleDeleteChat = async (threadId, isGroup) => { if(window.confirm(isGroup ? "Are you sure you want to leave this group?" : "Are you sure you want to delete this secure channel?")) { try { if (isGroup) { const groupRef = doc(db, 'chat_threads', threadId); const groupSnap = await getDoc(groupRef); const newParticipants = groupSnap.data().participants.filter(id => id !== user.uid); if (newParticipants.length === 0) await deleteDoc(groupRef); else await updateDoc(groupRef, { participants: newParticipants }); } else await deleteDoc(doc(db, 'chat_threads', threadId)); const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}'); delete savedKeys[threadId]; localStorage.setItem('commslink_keys', JSON.stringify(savedKeys)); if (activeChat?.id === threadId) window.history.back(); } catch (err) { alert("Action failed."); } } };
-
-  const globalStyles = `
-    @keyframes popIn { 0% { opacity: 0; transform: translateY(10px) scale(0.98); } 100% { opacity: 1; transform: translateY(0) scale(1); } } 
-    .animate-pop-in { animation: popIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } 
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } 
-    .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
-    @keyframes bouncySlideUp { 0% { transform: translateY(100%); opacity: 0; } 70% { transform: translateY(-5%); opacity: 1; } 100% { transform: translateY(0); opacity: 1; } }
-    .animate-bouncy-slide-up { animation: bouncySlideUp 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-    @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-    .animate-slide-up { animation: slideUp 0.2s ease-out forwards; }
-    @keyframes glitchIn { 0% { opacity: 0; transform: scale(0.9) translate3d(2px, 0, 0); filter: drop-shadow(-2px 0 red) drop-shadow(2px 0 cyan); } 20% { opacity: 0.8; transform: scale(1.02) translate3d(-2px, 0, 0); filter: drop-shadow(2px 0 red) drop-shadow(-2px 0 cyan); } 40% { opacity: 1; transform: scale(0.98) translate3d(2px, 0, 0); filter: drop-shadow(-1px 0 red) drop-shadow(1px 0 cyan); } 60% { opacity: 1; transform: scale(1) translate3d(0, 0, 0); filter: none; } 100% { opacity: 1; transform: scale(1); filter: none; } }
-    .animate-glitch-in { animation: glitchIn 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; }
-    .vanishing { animation: vanish 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards; pointer-events: none; }
-    @keyframes vanish { 0% { opacity: 1; transform: scale(1) translateY(0); max-height: 500px; margin-bottom: 1rem; } 40% { opacity: 0; transform: scale(0.95) translateY(-10px); max-height: 500px; margin-bottom: 1rem; } 100% { opacity: 0; transform: scale(0.95) translateY(-10px); max-height: 0; margin-bottom: 0; padding: 0; border: none; overflow: hidden; } }
-    .glass-picker { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
-    .custom-scrollbar::-webkit-scrollbar { width: 5px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
-    .pb-safe { padding-bottom: env(safe-area-inset-bottom, 16px); }
-  `;
-
-  if (user === null) return <><style>{globalStyles}</style><AuthScreen t={t} /></>;
-
-  return (
-    <div className="flex h-[100dvh] w-full bg-[#050508] text-slate-200 overflow-hidden font-sans">
-      <style>{globalStyles}</style>
-
-      {showProfileModal && (
-        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-pop-in">
-            <div className="flex justify-between items-center mb-6"><h3 className={`text-xl font-bold ${t.text}`}>Agent Protocol</h3><button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button></div>
-            <div className="flex flex-col items-center mb-6">
-              <input type="file" accept="image/*" className="hidden" ref={avatarInputRef} onChange={handleAvatarChange} />
-              <div onClick={() => avatarInputRef.current?.click()} className={`relative w-24 h-24 rounded-full bg-gradient-to-br ${t.bgLight} border-2 ${t.border} flex items-center justify-center cursor-pointer group overflow-hidden shadow-lg`}>
-                {currentUserData?.avatarData ? <img src={currentUserData.avatarData} className="w-full h-full object-cover group-hover:opacity-50 transition-all" /> : <User className={`w-10 h-10 ${t.text} group-hover:opacity-50 transition-all`} />}
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"><Camera className="w-8 h-8 text-white drop-shadow-md" /></div>
-              </div>
-            </div>
-            <div className="text-center mb-6">
-              <p className="text-xs text-slate-400 uppercase tracking-widest mb-1">Your Agent ID</p>
-              <div onClick={copyAgentId} className={`inline-flex items-center gap-2 cursor-pointer font-mono text-lg font-bold bg-black/50 py-2 px-4 rounded-xl border ${copiedId ? 'border-green-500 text-green-400' : 'border-white/10 text-white'} hover:bg-white/5 transition-all shadow-inner`}>{currentUserData?.agentId} {copiedId ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4 opacity-50" />}</div>
-            </div>
-            <form onSubmit={handleUpdateProfile}>
-              <div className="flex flex-col gap-2 mb-6"><label className="text-xs font-semibold text-slate-400 uppercase">Display Name</label><input type="text" required value={editName} onChange={(e) => setEditName(e.target.value)} className={`w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-white/30 ${t.ring} focus:ring-1 text-center`} /></div>
-              <button type="submit" disabled={isSavingProfile} className={`w-full py-3 rounded-xl bg-gradient-to-r ${t.sendBtn} text-white font-bold text-sm shadow-lg flex justify-center items-center`}>{isSavingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save Profile"}</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showKeyModal && (
-        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-pop-in">
-            <h3 className={`text-xl font-bold mb-1 ${t.text}`}>Update Key Ring</h3><p className="text-xs text-slate-400 mb-4">Add a new key or enter an existing one. Old keys are saved locally to decode chat history.</p>
-            <form onSubmit={confirmChatEntry}>
-              <input type="password" autoFocus required value={tempKey} onChange={(e) => setTempKey(e.target.value)} placeholder="Encryption Key" className={`w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 mb-4 outline-none focus:border-white/30 ${t.ring} focus:ring-1`} />
-              <div className="flex gap-2"><button type="button" onClick={() => setShowKeyModal(false)} className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 transition-all font-bold text-sm">Cancel</button><button type="submit" className={`flex-1 py-3 rounded-xl bg-gradient-to-r ${t.sendBtn} text-white font-bold text-sm shadow-lg`}>Update Key</button></div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      <div className={`${activeChat ? 'hidden md:flex' : 'flex'} w-full md:w-[350px] lg:w-[400px] flex-col border-r border-white/10 z-20 shrink-0 bg-[#0a0a0f]`}>
-        <header className="px-4 py-4 border-b border-white/10 shrink-0 flex justify-between items-center bg-[#0f0f14]">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setShowProfileModal(true)} className={`w-10 h-10 rounded-full bg-gradient-to-br ${t.bgLight} border ${t.border} flex items-center justify-center ${t.glow} hover:scale-105 transition-all overflow-hidden shadow-lg cursor-pointer shrink-0`}>{currentUserData?.avatarData ? <img src={currentUserData.avatarData} className="w-full h-full object-cover" /> : <Settings className={`w-5 h-5 ${t.text}`} />}</button>
-            <div className="flex flex-col"><h2 className={`font-mono text-lg font-bold ${t.title} truncate tracking-widest`}>CommsLink</h2></div>
-          </div>
-          <div className="flex gap-1 shrink-0"><button onClick={toggleTheme} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5"><Palette className="w-4 h-4" /></button><button onClick={handleLogout} className="p-2 text-red-400 hover:text-red-300 rounded-lg hover:bg-white/5"><LogOut className="w-4 h-4" /></button></div>
-        </header>
-
-        <div className="p-4 border-b border-white/5 shrink-0 bg-[#0c0c12]">
-          <div className="flex gap-1 mb-3 bg-black/40 p-1 rounded-lg border border-white/5"><button onClick={() => setConnectMode('agent')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${connectMode === 'agent' ? t.activeTab : 'text-slate-500 hover:text-slate-300'}`}>Agent Link</button><button onClick={() => setConnectMode('group')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${connectMode === 'group' ? t.activeTab : 'text-slate-500 hover:text-slate-300'}`}>Servers</button></div>
-          {connectMode === 'agent' ? (
-            <form onSubmit={handleSearchAndCreateChat} className="flex gap-2">
-              <div className="relative flex-1 group"><div className={`absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:${t.text}`}><Search className="w-3.5 h-3.5" /></div><input type="text" value={searchAgentId} onChange={(e) => setSearchAgentId(e.target.value)} placeholder="Enter Agent ID..." className={`w-full bg-black/50 border border-white/10 rounded-lg py-2 pl-9 pr-3 text-sm ${t.ring} focus:ring-1 outline-none transition-all`} /></div>
-              <button type="submit" disabled={isSearching || !searchAgentId.trim()} className={`bg-gradient-to-r ${t.sendBtn} text-white px-3 rounded-lg disabled:opacity-50 shrink-0`}><Plus className="w-4 h-4" /></button>
-            </form>
-          ) : (
-            <form onSubmit={handleGroupJoin} className="flex flex-col gap-2">
-              <div className="relative group flex items-center"><input type="text" value={groupNameInput} onChange={(e) => setGroupNameInput(e.target.value)} placeholder="Server Name..." className={`w-full bg-black/50 border border-white/10 rounded-lg py-2 pl-3 pr-8 text-sm ${t.ring} focus:ring-1 outline-none transition-all`} /><button type="button" onClick={generateRandomGroup} className="absolute right-2 p-1 text-slate-500 hover:text-white" title="Random Server"><RefreshCw className="w-3 h-3" /></button></div>
-              <button type="submit" disabled={isSearching || !groupNameInput.trim()} className={`w-full bg-gradient-to-r ${t.sendBtn} py-2 text-white text-sm font-bold rounded-lg disabled:opacity-50 shrink-0`}>Create / Join Server</button>
-            </form>
-          )}
-        </div>
-
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-          {chatThreads.length === 0 ? ( <div className="text-center p-8 mt-4 text-slate-500 opacity-50"><MessageSquare className="w-8 h-8 mx-auto mb-2" /><p className="text-xs">No active channels.</p></div> ) : (
-            chatThreads.map((thread) => {
-              const isGroup = thread.isGroup; let chatName = "Unknown"; let chatAvatar = null; let isOnline = false;
-              if (isGroup) chatName = thread.name || "Group Server";
-              else {
-                const otherUserId = thread.participants.find(id => id !== user.uid); const otherUserAgent = usersList.find(u => u.uid === otherUserId);
-                chatName = thread.customName || otherUserAgent?.displayName || thread.participantNames?.[otherUserId] || 'Unknown Agent'; 
-                chatAvatar = otherUserAgent?.avatarData || null;
-                if (otherUserAgent && otherUserAgent.lastSeen && Date.now() - otherUserAgent.lastSeen < 300000) isOnline = true;
-              }
-              const hasLocalKey = !!JSON.parse(localStorage.getItem('commslink_keys') || '{}')[thread.id]; const isActive = activeChat?.id === thread.id;
-              return (
-                <button key={thread.id} onClick={() => triggerChatEntry(thread)} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all group text-left ${isActive ? 'bg-white/10 border border-white/5' : 'bg-transparent hover:bg-white/5 border border-transparent'}`}>
-                  <div className={`w-11 h-11 rounded-full relative bg-black/50 border ${isActive ? t.border : 'border-white/10'} flex items-center justify-center shrink-0 overflow-hidden`}>{isGroup ? <Users className={`w-4 h-4 ${isActive ? t.text : 'text-slate-400'}`} /> : (chatAvatar ? <img src={chatAvatar} className="w-full h-full object-cover" /> : <User className={`w-4 h-4 ${isActive ? t.text : 'text-slate-400'}`} />)}{isOnline && !isGroup && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-[#0a0a0f] rounded-full shadow-[0_0_5px_rgba(34,197,94,0.5)]"></div>}</div>
-                  <div className="flex-1 overflow-hidden"><h4 className={`font-bold truncate text-sm ${isActive ? 'text-white' : 'text-slate-300'}`}>{chatName}</h4><p className={`text-[10px] truncate flex items-center gap-1 mt-0.5 ${hasLocalKey ? 'text-green-500/70' : 'text-amber-500/70'}`}>{hasLocalKey ? <Unlock className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />} {hasLocalKey ? 'Cached' : 'Locked'}</p></div>
-                </button>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      <div className={`${!activeChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col relative bg-[#050508] min-h-0`}>
-        {activeChat ? ( <ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={chatThreads.find(th => th.id === activeChat.id) || activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => { try { window.history.back(); } catch(e){ setActiveChat(null); } }} deleteChat={handleDeleteChat} t={t} themeMode={themeMode} /> ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-500/40 relative">
-             <div className="absolute inset-0 bg-center bg-no-repeat bg-contain opacity-5" style={{ backgroundImage: "url('data:image/svg+xml;utf8,<svg width=\"100\" height=\"100\" viewBox=\"0 0 100 100\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M50 20L80 40V70L50 90L20 70V40L50 20Z\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>')" }}></div>
-             <ShieldCheck className="w-24 h-24 mb-6 drop-shadow-2xl" /><h3 className="font-mono text-xl tracking-widest uppercase mb-2">CommsLink Standby</h3><p className="text-sm">Select a channel from the directory to establish uplink.</p>
-          </div>
-        )}
-      </div>
-
     </div>
   );
 }
