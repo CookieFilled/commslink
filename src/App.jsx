@@ -383,8 +383,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
               try { await peerConnection.current.addIceCandidate(c); } catch (e) { console.error("Candidate add error", e); }
             }
             pendingCandidates.current = [];
-            updateCallState('connected');
-            startCallTimer();
+            // Do NOT call updateCallState('connected') here.
+            // ICE state change ('connected'/'completed') will drive the transition.
             if (callTimeoutRef.current) clearTimeout(callTimeoutRef.current);
             setConnectionError(null);
           } catch (err) { console.error("Set Remote Desc Error", err); }
@@ -410,7 +410,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           // Only process candidates from the other person
           if (data.senderId !== user.uid) {
             const candidate = new RTCIceCandidate(data.candidate);
-            
+
             if (peerConnection.current) {
               // If PC exists, check if remote desc is set
               if (peerConnection.current.remoteDescription) {
@@ -433,19 +433,31 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const startCall = async (mode) => {
     const isVideo = mode === 'video_raw' || mode === 'video_blur' || mode === 'video_jam';
     const useAudioMask = mode === 'audio_masked';
-    const videoMode = mode.replace('video_', '');
+    // Correctly extract the video processing mode (only meaningful for video calls)
+    const videoMode = isVideo ? mode.replace('video_', '') : 'raw';
     setIsVideoEnabled(isVideo);
     updateCallState('calling');
     setConnectionError(null);
     pendingCandidates.current = []; // Reset queue
 
     peerConnection.current = new RTCPeerConnection(iceServers);
-    
-    // Debug Logging
+
+    // ICE state change drives the 'connected' transition for the caller
     peerConnection.current.oniceconnectionstatechange = () => {
-      console.log(`[WebRTC] ICE State: ${peerConnection.current.iceConnectionState}`);
-      if (peerConnection.current.iceConnectionState === 'failed') {
-        setConnectionError("Connection Failed. Check network.");
+      const iceState = peerConnection.current?.iceConnectionState;
+      console.log(`[WebRTC] Caller ICE State: ${iceState}`);
+      if (iceState === 'connected' || iceState === 'completed') {
+        if (callStateRef.current !== 'connected') {
+          updateCallState('connected');
+          startCallTimer();
+          if (callTimeoutRef.current) clearTimeout(callTimeoutRef.current);
+          setConnectionError(null);
+        }
+      } else if (iceState === 'failed') {
+        setConnectionError('Connection failed. Retrying...');
+        peerConnection.current?.restartIce?.();
+      } else if (iceState === 'disconnected') {
+        setConnectionError('Connection lost. Reconnecting...');
       }
     };
 
@@ -454,9 +466,11 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { senderId: user.uid, candidate: event.candidate.toJSON() }).catch(console.error);
       }
     };
+
+    // Always mount remote stream as soon as tracks arrive — do not gate on callState
     peerConnection.current.ontrack = (event) => {
       remoteStreamRef.current = event.streams[0];
-      if (remoteMediaRef.current && callStateRef.current === 'connected') {
+      if (remoteMediaRef.current) {
         remoteMediaRef.current.srcObject = event.streams[0];
       }
     };
@@ -465,13 +479,18 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     if (callTimeoutRef.current) clearTimeout(callTimeoutRef.current);
     callTimeoutRef.current = setTimeout(() => {
       if (callStateRef.current !== 'connected') {
-        setConnectionError("Call timed out.");
+        setConnectionError('Call timed out.');
         endCall();
       }
     }, 30000);
 
     try {
-      const constraints = isVideo ? { audio: true, video: { facingMode: "user", width: 640, height: 480 } } : { audio: true };
+      // BUG FIX: Delete stale candidates BEFORE setLocalDescription so we don't
+      // accidentally delete the fresh candidates we're about to generate.
+      const oldCandidates = await getDocs(collection(db, 'chat_threads', threadId, 'call_candidates'));
+      await Promise.all(oldCandidates.docs.map(c => deleteDoc(c.ref).catch(() => { })));
+
+      const constraints = isVideo ? { audio: true, video: { facingMode: 'user', width: 640, height: 480 } } : { audio: true };
       const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
       const { processedStream, audioCtx, canvasInterval } = await setupMaskedMedia(rawStream, videoMode, useAudioMask);
       audioContextRef.current = audioCtx;
@@ -484,65 +503,78 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         status: 'ringing', callerId: user.uid, offer: { type: offer.type, sdp: offer.sdp },
         isVideo: isVideo, videoMode: videoMode, timestamp: Date.now()
       });
-      // Cleanup old candidates
-      const oldCandidates = await getDocs(collection(db, 'chat_threads', threadId, 'call_candidates'));
-      oldCandidates.forEach(c => deleteDoc(c.ref).catch(()=>{}));
     } catch (err) {
-      console.error("Call Setup Error:", err);
+      console.error('Call Setup Error:', err);
       alert(`Failed to start call: ${err.message}`);
       endCallLocally();
     }
   };
 
   const answerCall = async () => {
-    pendingCandidates.current = []; // Reset queue
+    // BUG FIX: Do NOT reset pendingCandidates here — the ICE listener has been
+    // queuing the caller's candidates since 'ringing' state. Resetting loses them.
     peerConnection.current = new RTCPeerConnection(iceServers);
 
-    // Debug Logging
+    // ICE state change drives the 'connected' transition for the answerer too
     peerConnection.current.oniceconnectionstatechange = () => {
-      console.log(`[WebRTC] ICE State: ${peerConnection.current.iceConnectionState}`);
-      if (peerConnection.current.iceConnectionState === 'failed') {
-        setConnectionError("Connection Failed. Check network.");
+      const iceState = peerConnection.current?.iceConnectionState;
+      console.log(`[WebRTC] Answerer ICE State: ${iceState}`);
+      if (iceState === 'connected' || iceState === 'completed') {
+        if (callStateRef.current !== 'connected') {
+          updateCallState('connected');
+          startCallTimer();
+          if (callTimeoutRef.current) clearTimeout(callTimeoutRef.current);
+          setConnectionError(null);
+        }
+      } else if (iceState === 'failed') {
+        setConnectionError('Connection failed. Retrying...');
+        peerConnection.current?.restartIce?.();
+      } else if (iceState === 'disconnected') {
+        setConnectionError('Connection lost. Reconnecting...');
       }
     };
 
     peerConnection.current.onicecandidate = (event) => {
       if (event.candidate) addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { senderId: user.uid, candidate: event.candidate.toJSON() }).catch(console.error);
     };
+
+    // Always mount remote stream as soon as tracks arrive — do not gate on callState
     peerConnection.current.ontrack = (event) => {
       remoteStreamRef.current = event.streams[0];
-      if (remoteMediaRef.current && callStateRef.current === 'connected') {
+      if (remoteMediaRef.current) {
         remoteMediaRef.current.srcObject = event.streams[0];
       }
     };
+
     try {
       const callDoc = await getDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'));
       const callData = callDoc.data();
-      const constraints = callData.isVideo ? { audio: true, video: { facingMode: "user", width: 640, height: 480 } } : { audio: true };
+      const constraints = callData.isVideo ? { audio: true, video: { facingMode: 'user', width: 640, height: 480 } } : { audio: true };
       const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
-      const { processedStream, audioCtx, canvasInterval } = await setupMaskedMedia(rawStream, callData.videoMode, false);
+      // videoMode stored by caller is already correct ('raw'/'blur'/'jam')
+      const { processedStream, audioCtx, canvasInterval } = await setupMaskedMedia(rawStream, callData.videoMode || 'raw', false);
       audioContextRef.current = audioCtx;
       canvasIntervalRef.current = canvasInterval;
       localStreamRef.current = processedStream;
       processedStream.getTracks().forEach(track => peerConnection.current.addTrack(track, processedStream));
-      
+
       await peerConnection.current.setRemoteDescription(new RTCSessionDescription(callData.offer));
-      
-      // CRITICAL: Process queued candidates immediately after setting remote description
+
+      // Flush candidates queued during 'ringing' state (before PC existed)
       console.log(`[WebRTC] Flushing ${pendingCandidates.current.length} queued candidates on answer.`);
       for (const c of pendingCandidates.current) {
-        try { await peerConnection.current.addIceCandidate(c); } catch (e) { console.error("Candidate add error", e); }
+        try { await peerConnection.current.addIceCandidate(c); } catch (e) { console.error('Candidate add error', e); }
       }
       pendingCandidates.current = [];
 
       const answer = await peerConnection.current.createAnswer();
       await peerConnection.current.setLocalDescription(answer);
       await updateDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'answered', answer: { type: answer.type, sdp: answer.sdp } });
-      updateCallState('connected'); startCallTimer();
+      // Do NOT call updateCallState('connected') here — ICE state change will drive it.
       if (callTimeoutRef.current) clearTimeout(callTimeoutRef.current);
       setConnectionError(null);
     } catch (err) {
-      console.error("Answer Call Error:", err);
+      console.error('Answer Call Error:', err);
       alert(`Failed to answer: ${err.message}`);
       endCallLocally();
     }
@@ -769,7 +801,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-pulse`}>{isVideoEnabled ? <Video className={`w-10 h-10 ${t.text}`} /> : <PhoneCall className={`w-10 h-10 ${t.text}`} />}</div>
           <h2 className="text-xl font-bold text-white mb-2">Establishing Uplink...</h2>
           <p className="text-xs text-slate-500 mb-12">P2P Handshake initiated</p>
-          {connectionError && <div className="text-red-400 mb-4 flex items-center gap-2"><AlertCircle className="w-4 h-4"/> {connectionError}</div>}
+          {connectionError && <div className="text-red-400 mb-4 flex items-center gap-2"><AlertCircle className="w-4 h-4" /> {connectionError}</div>}
           <button onClick={endCall} className="w-16 h-16 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-6 h-6 text-white" /></button>
         </div>
       )}
