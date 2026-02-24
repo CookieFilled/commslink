@@ -69,7 +69,6 @@ const setupMaskedMedia = async (rawStream, videoMode, useAudioMask) => {
   const audioCtx = useAudioMask ? new (window.AudioContext || window.webkitAudioContext)() : null;
   let canvasInterval = null;
 
-  // Process Audio
   if (rawStream.getAudioTracks().length > 0) {
     if (useAudioMask) {
       const source = audioCtx.createMediaStreamSource(rawStream);
@@ -83,7 +82,6 @@ const setupMaskedMedia = async (rawStream, videoMode, useAudioMask) => {
     }
   }
 
-  // Process Video
   if (rawStream.getVideoTracks().length > 0) {
     if (videoMode === 'raw') {
       tracks.push(rawStream.getVideoTracks()[0]);
@@ -92,7 +90,7 @@ const setupMaskedMedia = async (rawStream, videoMode, useAudioMask) => {
       videoEl.srcObject = new MediaStream([rawStream.getVideoTracks()[0]]);
       videoEl.muted = true;
       videoEl.playsInline = true;
-      await videoEl.play();
+      videoEl.play().catch(e => console.warn("Background video blocked:", e));
 
       const canvas = document.createElement('canvas');
       canvas.width = 640; canvas.height = 480;
@@ -310,15 +308,21 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const callDurationRef = useRef(0); 
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
+  const [isLocalVideoOff, setIsLocalVideoOff] = useState(false);
   
-  // React State for dynamic stream rendering (Fixes the invisible media bug)
-  const [remoteStream, setRemoteStream] = useState(null);
+  // Hardware-Safe DOM Hooks
+  const remoteMediaRef = useRef(null);
+  const localVideoRef = useRef(null);
+  const remoteStreamRef = useRef(null);
   
   const peerConnection = useRef(null);
   const localStreamRef = useRef(null);
   const audioContextRef = useRef(null);
   const canvasIntervalRef = useRef(null);
   const callDurationTimer = useRef(null);
+  
+  // Candidate Queue to fix WebRTC race conditions
+  const pendingCandidates = useRef([]);
 
   const updateCallState = (newState) => {
     setCallState(newState);
@@ -327,18 +331,42 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   const isGroup = chatData?.isGroup;
   let chatName = "Unknown Channel"; let chatAvatar = null; let memberCount = chatData?.participants?.length || 0;
+  
   const otherUserId = isGroup ? null : chatData?.participants?.find(id => id !== user.uid);
   let someoneIsTyping = false; let typingName = '';
   
   if (chatData?.typing) { const typists = Object.keys(chatData.typing).filter(id => id !== user.uid && chatData.typing[id]); if (typists.length > 0) { someoneIsTyping = true; const typistObj = usersList.find(u => u.uid === typists[0]); typingName = typistObj ? typistObj.displayName : 'Agent'; } }
   
-  if (isGroup) { chatName = chatData?.name || "Group Server"; } 
-  else { const otherUserAgent = usersList.find(u => u.uid === otherUserId); chatName = chatData?.customName || otherUserAgent?.displayName || chatData?.participantNames?.[otherUserId] || 'Unknown Agent'; chatAvatar = otherUserAgent?.avatarData || null; }
+  if (isGroup) { 
+    chatName = chatData?.name || "Group Server"; 
+  } else { 
+    const otherUserAgent = usersList.find(u => u.uid === otherUserId); 
+    chatName = chatData?.customName || otherUserAgent?.displayName || chatData?.participantNames?.[otherUserId] || 'Unknown Agent'; 
+    chatAvatar = otherUserAgent?.avatarData || null; 
+  }
 
-  const iceServers = { iceServers: [ { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }, { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' } ] };
+  const iceServers = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }
+    ]
+  };
 
   useEffect(() => { setMsgLimit(30); setEditingMsg(null); setReplyingTo(null); setInputText(''); }, [threadId]);
   useEffect(() => { decryptionCache.current = {}; }, [encryptionKeys]);
+
+  // Safely mount streams to the DOM when connection opens
+  useEffect(() => {
+    if (callState === 'connected') {
+       if (remoteMediaRef.current && remoteStreamRef.current && remoteMediaRef.current.srcObject !== remoteStreamRef.current) {
+           remoteMediaRef.current.srcObject = remoteStreamRef.current;
+       }
+       if (localVideoRef.current && localStreamRef.current && localVideoRef.current.srcObject !== localStreamRef.current) {
+           localVideoRef.current.srcObject = localStreamRef.current;
+       }
+    }
+  }, [callState, isVideoEnabled]);
 
   // --- WebRTC Signaling Listener ---
   useEffect(() => {
@@ -357,6 +385,11 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         if (peerConnection.current.signalingState === "have-local-offer") {
            const remoteDesc = new RTCSessionDescription(data.answer);
            await peerConnection.current.setRemoteDescription(remoteDesc);
+           
+           // Release queued candidates
+           pendingCandidates.current.forEach(c => peerConnection.current.addIceCandidate(c).catch(console.error));
+           pendingCandidates.current = [];
+           
            updateCallState('connected'); 
            startCallTimer();
         }
@@ -367,7 +400,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     return () => unsubscribe();
   }, [threadId, user.uid, isGroup]); 
 
-  // --- WebRTC ICE Candidate Listener ---
+  // --- WebRTC ICE Candidate Listener (Fixes Race Condition) ---
   useEffect(() => {
     if (!peerConnection.current || callState === 'idle') return;
     const q = query(collection(db, 'chat_threads', threadId, 'call_candidates'));
@@ -375,9 +408,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       snapshot.docChanges().forEach((change) => {
         if (change.type === 'added') {
           const data = change.doc.data();
-          if (data.senderId !== user.uid) {
+          if (data.senderId !== user.uid && peerConnection.current) {
             const candidate = new RTCIceCandidate(data.candidate);
-            peerConnection.current.addIceCandidate(candidate).catch(e => console.error(e));
+            if (peerConnection.current.remoteDescription) {
+                peerConnection.current.addIceCandidate(candidate).catch(e => console.error("ICE err", e));
+            } else {
+                pendingCandidates.current.push(candidate);
+            }
           }
         }
       });
@@ -399,7 +436,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     };
 
     peerConnection.current.ontrack = (event) => {
-      if (event.streams && event.streams[0]) setRemoteStream(event.streams[0]);
+      remoteStreamRef.current = event.streams[0];
+      if (remoteMediaRef.current && callStateRef.current === 'connected') { 
+        remoteMediaRef.current.srcObject = event.streams[0]; 
+      }
     };
 
     try {
@@ -421,6 +461,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         status: 'ringing', callerId: user.uid, offer: { type: offer.type, sdp: offer.sdp }, 
         isVideo: isVideo, videoMode: videoMode, timestamp: Date.now() 
       });
+      
+      // Cleanup old candidates
       const oldCandidates = await getDocs(collection(db, 'chat_threads', threadId, 'call_candidates'));
       oldCandidates.forEach(c => deleteDoc(c.ref));
 
@@ -437,7 +479,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       if (event.candidate) addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { senderId: user.uid, candidate: event.candidate.toJSON() });
     };
     peerConnection.current.ontrack = (event) => {
-      if (event.streams && event.streams[0]) setRemoteStream(event.streams[0]);
+      remoteStreamRef.current = event.streams[0];
+      if (remoteMediaRef.current && callStateRef.current === 'connected') { 
+        remoteMediaRef.current.srcObject = event.streams[0]; 
+      }
     };
 
     try {
@@ -456,6 +501,11 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       processedStream.getTracks().forEach(track => peerConnection.current.addTrack(track, processedStream));
 
       await peerConnection.current.setRemoteDescription(new RTCSessionDescription(callData.offer));
+      
+      // Release queued candidates
+      pendingCandidates.current.forEach(c => peerConnection.current.addIceCandidate(c).catch(console.error));
+      pendingCandidates.current = [];
+
       const answer = await peerConnection.current.createAnswer();
       await peerConnection.current.setLocalDescription(answer);
 
@@ -493,8 +543,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
     if (canvasIntervalRef.current) { clearInterval(canvasIntervalRef.current); canvasIntervalRef.current = null; }
     clearInterval(callDurationTimer.current); 
-    setCallDuration(0); callDurationRef.current = 0; setIsMuted(false); setIsVideoEnabled(false);
-    setRemoteStream(null);
+    
+    pendingCandidates.current = [];
+    remoteStreamRef.current = null;
+    if(remoteMediaRef.current) remoteMediaRef.current.srcObject = null;
+    if(localVideoRef.current) localVideoRef.current.srcObject = null;
+    
+    setCallDuration(0); callDurationRef.current = 0; setIsMuted(false); setIsVideoEnabled(false); setIsLocalVideoOff(false);
     updateCallState('idle');
   };
 
@@ -518,7 +573,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const toggleVideo = () => {
     if (localStreamRef.current) {
       const videoTrack = localStreamRef.current.getVideoTracks()[0];
-      if (videoTrack) { videoTrack.enabled = !videoTrack.enabled; }
+      if (videoTrack) { 
+        videoTrack.enabled = !videoTrack.enabled; 
+        setIsLocalVideoOff(!videoTrack.enabled);
+      }
     }
   };
 
@@ -684,6 +742,14 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   return (
     <div className="flex-1 flex flex-col relative bg-[#050508] min-h-0 overflow-x-hidden" onClick={() => { setActiveMenu(null); setIsTimeDropdownOpen(false); setShowStickerPicker(false); }} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
       
+      {/* Universal Audio/Video Anchor (Fixes the React Mounting Bug) */}
+      <video 
+        ref={remoteMediaRef} 
+        autoPlay 
+        playsInline 
+        className={`absolute top-0 left-0 object-cover transition-opacity duration-300 ${callState === 'connected' && isVideoEnabled ? 'w-full h-full opacity-100 z-[490]' : 'w-1 h-1 opacity-0 pointer-events-none -z-10'}`} 
+      />
+
       {/* --- WEBRTC CALLING OVERLAYS --- */}
       {callState === 'prompting' && (
         <div className="absolute inset-0 z-[500] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-fade-in overflow-y-auto">
@@ -722,28 +788,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       )}
 
       {callState === 'connected' && (
-        <div className="absolute inset-0 z-[500] bg-[#0a0a0f] flex flex-col items-center justify-center animate-fade-in overflow-hidden">
+        <div className={`absolute inset-0 z-[500] flex flex-col items-center justify-center animate-fade-in overflow-hidden ${isVideoEnabled ? 'bg-transparent' : 'bg-[#0a0a0f]'}`}>
           {isVideoEnabled ? (
-            <>
-              {/* Remote Video (Main Feed) */}
-              <video 
-                autoPlay playsInline 
-                className="w-full h-full object-cover"
-                ref={node => { if (node && node.srcObject !== remoteStream) node.srcObject = remoteStream; }}
-              />
-              {/* Local Video (Picture-in-Picture) */}
-              <div className="absolute top-6 right-6 w-28 h-40 md:w-40 md:h-56 bg-black border border-white/20 rounded-xl overflow-hidden shadow-2xl z-10">
-                <video 
-                  autoPlay playsInline muted 
-                  className="w-full h-full object-cover"
-                  ref={node => { if (node && node.srcObject !== localStreamRef.current) node.srcObject = localStreamRef.current; }}
-                />
-              </div>
-            </>
+            <div className="absolute top-6 right-6 w-28 h-40 md:w-40 md:h-56 bg-black border border-white/20 rounded-xl overflow-hidden shadow-2xl z-10">
+              <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
+            </div>
           ) : (
             <>
-              {/* Audio Only Mode */}
-              <audio autoPlay playsInline ref={node => { if (node && node.srcObject !== remoteStream) node.srcObject = remoteStream; }} />
               <div className={`w-24 h-24 rounded-full bg-black border ${isMuted ? 'border-amber-500/50' : 'border-green-500/50'} flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(34,197,94,0.2)]`}><User className={`w-10 h-10 ${isMuted ? 'text-amber-500' : 'text-green-400'}`} /></div>
               <h2 className="text-xl font-bold text-white mb-1">Link Established</h2>
             </>
@@ -751,9 +802,9 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
           {/* Call Controls Overlay */}
           <div className={`absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-6 px-8 py-4 bg-black/60 backdrop-blur-md rounded-full border border-white/10 ${isVideoEnabled ? 'shadow-2xl' : ''}`}>
-             <span className="text-mono text-green-400 font-bold mr-2">{formatCallTime(callDuration)}</span>
+             <span className="font-mono text-green-400 font-bold mr-2">{formatCallTime(callDuration)}</span>
              <button onClick={toggleMute} className={`w-12 h-12 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${isMuted ? 'bg-amber-500/20 text-amber-500 border border-amber-500/50' : 'bg-white/10 text-white'}`}>{isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}</button>
-             {isVideoEnabled && ( <button onClick={toggleVideo} className="w-12 h-12 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/10 text-white"><Video className="w-5 h-5" /></button> )}
+             {isVideoEnabled && ( <button onClick={toggleVideo} className={`w-12 h-12 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${isLocalVideoOff ? 'bg-red-500/20 text-red-500 border border-red-500/50' : 'bg-white/10 text-white'}`}>{isLocalVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}</button> )}
              <button onClick={endCall} className="w-12 h-12 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-5 h-5 text-white" /></button>
           </div>
         </div>
