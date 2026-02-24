@@ -54,14 +54,17 @@ const decryptText = async (base64, password) => {
 
 const parseMarkdown = (text) => {
   if (!text) return { __html: "" };
-  let html = text.replace(/</g, "&lt;").replace(/>/g, "&gt;") 
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/~(.*?)~/g, '<del>$1</del>')
-    .replace(/`(.*?)`/g, '<code class="bg-black/40 px-1.5 py-0.5 rounded text-cyan-400 font-mono text-[13px] border border-white/5 break-words">$1</code>')
-    .replace(/(?<!href=")(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-400 underline hover:text-blue-300 break-all" onclick="event.stopPropagation()">$1</a>');
+  // Fixed Safari-compatible linkifier
+  let html = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  html = html.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-400 underline hover:text-blue-300 break-all" onclick="event.stopPropagation()">$1</a>');
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+             .replace(/\*(.*?)\*/g, '<em>$1</em>')
+             .replace(/~(.*?)~/g, '<del>$1</del>')
+             .replace(/`(.*?)`/g, '<code class="bg-black/40 px-1.5 py-0.5 rounded text-cyan-400 font-mono text-[13px] border border-white/5 break-words">$1</code>');
   return { __html: html };
 };
 
-// --- Web Audio Scrambler (Agent Walkie-Talkie Filter) ---
+// --- Web Audio Scrambler ---
 const makeDistortionCurve = (amount) => {
   const k = typeof amount === 'number' ? amount : 50, n_samples = 44100, curve = new Float32Array(n_samples), deg = Math.PI / 180;
   for (let i = 0; i < n_samples; ++i) { let x = i * 2 / n_samples - 1; curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x)); }
@@ -71,19 +74,10 @@ const makeDistortionCurve = (amount) => {
 const setupMaskedAudio = async (rawStream) => {
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const source = audioCtx.createMediaStreamSource(rawStream);
-  
-  const waveShaper = audioCtx.createWaveShaper();
-  waveShaper.curve = makeDistortionCurve(400); // Heavy distortion
-  waveShaper.oversample = '4x';
-
-  const lowpass = audioCtx.createBiquadFilter();
-  lowpass.type = 'lowpass'; lowpass.frequency.value = 1000; // Muffles the voice to hide identity
-
-  const highpass = audioCtx.createBiquadFilter();
-  highpass.type = 'highpass'; highpass.frequency.value = 300; // Removes bass rumble
-
+  const waveShaper = audioCtx.createWaveShaper(); waveShaper.curve = makeDistortionCurve(400); waveShaper.oversample = '4x';
+  const lowpass = audioCtx.createBiquadFilter(); lowpass.type = 'lowpass'; lowpass.frequency.value = 1000;
+  const highpass = audioCtx.createBiquadFilter(); highpass.type = 'highpass'; highpass.frequency.value = 300;
   const destination = audioCtx.createMediaStreamDestination();
-
   source.connect(highpass); highpass.connect(lowpass); lowpass.connect(waveShaper); waveShaper.connect(destination);
   return { processedStream: destination.stream, audioCtx };
 };
@@ -104,12 +98,8 @@ const CustomAudioPlayer = ({ src, t }) => {
   const handleTimeUpdate = () => { const c = audioRef.current.currentTime; const tot = audioRef.current.duration; setProgress(tot ? (c / tot) * 100 : 0); };
   return (
     <div className={`flex items-center gap-3 px-3 py-2 bg-black/40 rounded-xl border border-white/5 w-[200px] sm:w-[250px]`}>
-      <button onClick={togglePlay} className={`w-8 h-8 flex items-center justify-center rounded-full ${t.bgLight} ${t.text} hover:opacity-80 transition-all shrink-0`}>
-        {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 ml-0.5 fill-current" />}
-      </button>
-      <div className="flex-1 h-1.5 bg-black/50 rounded-full overflow-hidden relative">
-        <div className={`absolute left-0 top-0 bottom-0 bg-gradient-to-r ${t.sendBtn} transition-all duration-75`} style={{ width: `${progress}%` }}></div>
-      </div>
+      <button onClick={togglePlay} className={`w-8 h-8 flex items-center justify-center rounded-full ${t.bgLight} ${t.text} hover:opacity-80 transition-all shrink-0`}>{isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 ml-0.5 fill-current" />}</button>
+      <div className="flex-1 h-1.5 bg-black/50 rounded-full overflow-hidden relative"><div className={`absolute left-0 top-0 bottom-0 bg-gradient-to-r ${t.sendBtn} transition-all duration-75`} style={{ width: `${progress}%` }}></div></div>
       <audio ref={audioRef} src={src} onTimeUpdate={handleTimeUpdate} onEnded={() => { setIsPlaying(false); setProgress(0); }} />
     </div>
   );
@@ -193,7 +183,7 @@ const MessageItem = ({ msg, index, isMine, isGroup, isConsecutive, repliedMsg, h
               {isMine && (<button onClick={() => { deleteMessage(msg.id); setActiveMenu(null); }} className="p-2 hover:bg-red-500/20 rounded-lg text-red-400"><Trash2 className="w-4 h-4"/></button>)}
             </div>
             <div className="grid grid-cols-6 gap-1 max-h-32 overflow-y-auto custom-scrollbar">
-              {REACTION_EMOJIS.map(emoji => (<button key={emoji} onClick={() => toggleReaction(msg.id, msg.reactions, emoji)} className="w-9 h-9 hover:bg-white/10 rounded-lg text-xl hover:scale-110">{emoji}</button>))}
+              {REACTION_EMOJIS.map(emoji => (<button key={emoji} onClick={() => toggleReaction(msg.id, msg.reactions || {}, emoji)} className="w-9 h-9 hover:bg-white/10 rounded-lg text-xl hover:scale-110">{emoji}</button>))}
             </div>
           </div>
         )}
@@ -245,7 +235,7 @@ const MessageItem = ({ msg, index, isMine, isGroup, isConsecutive, repliedMsg, h
             </div>
             {hasReactions && (
               <div className={`absolute -bottom-3 ${isMine ? 'right-2' : 'left-2'} flex flex-wrap gap-1 z-[60] animate-pop-in`}>
-                {Object.entries(msg.reactions).map(([emoji, users]) => (<button key={emoji} onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, msg.reactions, emoji); }} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] border shadow-md transition-all active:scale-95 hover:scale-105 ${users.includes(user.uid) ? `${t.bgLight} ${t.border} ${t.text}` : 'bg-[#1a1a24] border-white/10 text-slate-300'}`}><span>{emoji}</span>{users.length > 1 && <span>{users.length}</span>}</button>))}
+                {Object.entries(msg.reactions || {}).map(([emoji, users]) => (<button key={emoji} onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, msg.reactions || {}, emoji); }} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] border shadow-md transition-all active:scale-95 hover:scale-105 ${users.includes(user.uid) ? `${t.bgLight} ${t.border} ${t.text}` : 'bg-[#1a1a24] border-white/10 text-slate-300'}`}><span>{emoji}</span>{users.length > 1 && <span>{users.length}</span>}</button>))}
               </div>
             )}
           </div>
@@ -283,14 +273,24 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const audioContextRef = useRef(null);
   const callDurationTimer = useRef(null);
 
-  const isGroup = chatData.isGroup;
-  let chatName = "Unknown Channel"; let chatAvatar = null; let memberCount = chatData.participants?.length || 0;
-  const otherUserId = isGroup ? null : chatData.participants.find(id => id !== user.uid);
+  const isGroup = chatData?.isGroup;
+  let chatName = "Unknown Channel"; let chatAvatar = null; let memberCount = chatData?.participants?.length || 0;
+  
+  // FIXED: Safe participant checks
+  const otherUserId = isGroup ? null : chatData?.participants?.find(id => id !== user.uid);
   let someoneIsTyping = false; let typingName = '';
-  if (chatData.typing) { const typists = Object.keys(chatData.typing).filter(id => id !== user.uid && chatData.typing[id]); if (typists.length > 0) { someoneIsTyping = true; const typistObj = usersList.find(u => u.uid === typists[0]); typingName = typistObj ? typistObj.displayName : 'Agent'; } }
-  if (isGroup) { chatName = chatData.name || "Group Server"; } else { const otherUserAgent = usersList.find(u => u.uid === otherUserId); chatName = chatData.customName || otherUserAgent?.displayName || 'Unknown Agent'; chatAvatar = otherUserAgent?.avatarData || null; }
+  
+  if (chatData?.typing) { const typists = Object.keys(chatData.typing).filter(id => id !== user.uid && chatData.typing[id]); if (typists.length > 0) { someoneIsTyping = true; const typistObj = usersList.find(u => u.uid === typists[0]); typingName = typistObj ? typistObj.displayName : 'Agent'; } }
+  
+  if (isGroup) { 
+    chatName = chatData?.name || "Group Server"; 
+  } else { 
+    const otherUserAgent = usersList.find(u => u.uid === otherUserId); 
+    chatName = chatData?.customName || otherUserAgent?.displayName || chatData?.participantNames?.[otherUserId] || 'Unknown Agent'; 
+    chatAvatar = otherUserAgent?.avatarData || null; 
+  }
 
-  // PUBLIC TURN/STUN SERVERS (No Account Needed)
+  // PUBLIC TURN/STUN SERVERS
   const iceServers = {
     iceServers: [
       { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
@@ -705,7 +705,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         {filteredMessages.length === 0 ? <div className="flex-1 flex flex-col items-center justify-center text-slate-500 opacity-50"><ShieldCheck className="w-16 h-16 mb-4" /><p className="text-sm">{searchQuery ? 'No matches found.' : 'Secure channel established.'}</p></div> : 
         filteredMessages.map((msg, index) => {
           const isMine = msg.senderId === user.uid; const repliedMsg = msg.replyToId ? messages.find(m => m.id === msg.replyToId) : null;
-          const hasReactions = msg.reactions && Object.keys(msg.reactions).length > 0; const isRead = !isGroup && chatData.lastRead && chatData.lastRead[otherUserId] >= msg.timestamp;
+          const hasReactions = msg.reactions && Object.keys(msg.reactions).length > 0; const isRead = !isGroup && chatData?.lastRead && chatData.lastRead[otherUserId] >= msg.timestamp;
           const prevMsg = index > 0 ? filteredMessages[index - 1] : null; const isConsecutive = prevMsg && prevMsg.senderId === msg.senderId && (msg.timestamp - prevMsg.timestamp < 300000);
           let showDayDivider = false; let dayString = ''; if (index === 0) { showDayDivider = true; dayString = formatDay(msg.timestamp); } else if (!isSameDay(prevMsg.timestamp, msg.timestamp)) { showDayDivider = true; dayString = formatDay(msg.timestamp); }
           return (
@@ -775,7 +775,6 @@ export default function App() {
   useEffect(() => { if (!user) return; const unsub = onSnapshot(collection(db, 'users'), (snapshot) => { const others = []; snapshot.forEach(doc => { if (doc.id === user.uid) { setCurrentUserData(doc.data()); if (!editName) setEditName(doc.data().displayName || ''); } else others.push(doc.data()); }); setUsersList(others); }); return () => unsub(); }, [user]);
   useEffect(() => { if (!user) return; const q = query(collection(db, 'chat_threads'), where('participants', 'array-contains', user.uid)); const unsub = onSnapshot(q, (snapshot) => { const threads = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); threads.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0)); setChatThreads(threads); }); return () => unsub(); }, [user]);
 
-  // Hook into History API for Mobile Back Button
   useEffect(() => {
     const handlePopState = () => { if (activeChat) setActiveChat(null); };
     window.addEventListener('popstate', handlePopState);
@@ -793,11 +792,16 @@ export default function App() {
 
   const triggerChatEntry = (thread) => {
     let keys = JSON.parse(localStorage.getItem('commslink_keys') || '{}')[thread.id];
-    if (keys) { if (typeof keys === 'string') keys = [keys]; setEncryptionKeys(keys); setActiveChat(thread); window.history.pushState({ chat: thread.id }, ''); } 
+    if (keys) { 
+      if (typeof keys === 'string') keys = [keys]; 
+      setEncryptionKeys(keys); 
+      setActiveChat(thread); 
+      try { window.history.pushState({ chat: thread.id }, ''); } catch(e){} 
+    } 
     else { setTargetThread(thread); setTempKey(''); setShowKeyModal(true); }
   };
   const handleChangeKey = () => { setTargetThread(activeChat); setTempKey(''); setShowKeyModal(true); };
-  const confirmChatEntry = (e) => { e.preventDefault(); if (!tempKey.trim()) return; const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}'); let currentKeys = savedKeys[targetThread.id] || []; if (typeof currentKeys === 'string') currentKeys = [currentKeys]; if (!currentKeys.includes(tempKey.trim())) currentKeys.push(tempKey.trim()); savedKeys[targetThread.id] = currentKeys; localStorage.setItem('commslink_keys', JSON.stringify(savedKeys)); setEncryptionKeys(currentKeys); setActiveChat(targetThread); setShowKeyModal(false); window.history.pushState({ chat: targetThread.id }, ''); };
+  const confirmChatEntry = (e) => { e.preventDefault(); if (!tempKey.trim()) return; const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}'); let currentKeys = savedKeys[targetThread.id] || []; if (typeof currentKeys === 'string') currentKeys = [currentKeys]; if (!currentKeys.includes(tempKey.trim())) currentKeys.push(tempKey.trim()); savedKeys[targetThread.id] = currentKeys; localStorage.setItem('commslink_keys', JSON.stringify(savedKeys)); setEncryptionKeys(currentKeys); setActiveChat(targetThread); setShowKeyModal(false); try { window.history.pushState({ chat: targetThread.id }, ''); } catch(e){} };
 
   const handleDeleteChat = async (threadId, isGroup) => { if(window.confirm(isGroup ? "Are you sure you want to leave this group?" : "Are you sure you want to delete this secure channel?")) { try { if (isGroup) { const groupRef = doc(db, 'chat_threads', threadId); const groupSnap = await getDoc(groupRef); const newParticipants = groupSnap.data().participants.filter(id => id !== user.uid); if (newParticipants.length === 0) await deleteDoc(groupRef); else await updateDoc(groupRef, { participants: newParticipants }); } else await deleteDoc(doc(db, 'chat_threads', threadId)); const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}'); delete savedKeys[threadId]; localStorage.setItem('commslink_keys', JSON.stringify(savedKeys)); if (activeChat?.id === threadId) window.history.back(); } catch (err) { alert("Action failed."); } } };
 
@@ -891,7 +895,9 @@ export default function App() {
               if (isGroup) chatName = thread.name || "Group Server";
               else {
                 const otherUserId = thread.participants.find(id => id !== user.uid); const otherUserAgent = usersList.find(u => u.uid === otherUserId);
-                chatName = thread.customName || otherUserAgent?.displayName || thread.participantNames[otherUserId] || 'Unknown Agent'; chatAvatar = otherUserAgent?.avatarData || null;
+                // FIXED: Safe optional chaining for older chats
+                chatName = thread.customName || otherUserAgent?.displayName || thread.participantNames?.[otherUserId] || 'Unknown Agent'; 
+                chatAvatar = otherUserAgent?.avatarData || null;
                 if (otherUserAgent && otherUserAgent.lastSeen && Date.now() - otherUserAgent.lastSeen < 300000) isOnline = true;
               }
               const hasLocalKey = !!JSON.parse(localStorage.getItem('commslink_keys') || '{}')[thread.id]; const isActive = activeChat?.id === thread.id;
@@ -907,7 +913,7 @@ export default function App() {
       </div>
 
       <div className={`${!activeChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col relative bg-[#050508] min-h-0`}>
-        {activeChat ? ( <ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={chatThreads.find(th => th.id === activeChat.id) || activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => window.history.back()} deleteChat={handleDeleteChat} t={t} themeMode={themeMode} /> ) : (
+        {activeChat ? ( <ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={chatThreads.find(th => th.id === activeChat.id) || activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => { try { window.history.back(); } catch(e){ setActiveChat(null); } }} deleteChat={handleDeleteChat} t={t} themeMode={themeMode} /> ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-500/40 relative">
              <div className="absolute inset-0 bg-center bg-no-repeat bg-contain opacity-5" style={{ backgroundImage: "url('data:image/svg+xml;utf8,<svg width=\"100\" height=\"100\" viewBox=\"0 0 100 100\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M50 20L80 40V70L50 90L20 70V40L50 20Z\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>')" }}></div>
              <ShieldCheck className="w-24 h-24 mb-6 drop-shadow-2xl" /><h3 className="font-mono text-xl tracking-widest uppercase mb-2">CommsLink Standby</h3><p className="text-sm">Select a channel from the directory to establish uplink.</p>
