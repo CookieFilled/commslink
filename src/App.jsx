@@ -106,17 +106,15 @@ const setupMaskedMedia = async (rawStream, videoMode, useAudioMask) => {
           ctx.filter = 'grayscale(100%) contrast(180%) brightness(80%)';
           ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
           
-          // Matrix/Cyberpunk Scanlines
           ctx.fillStyle = 'rgba(0,0,0,0.3)';
           for (let i = 0; i < canvas.height; i += 4) ctx.fillRect(0, i, canvas.width, 1);
           
-          // Static Jitter
           if (Math.random() > 0.8) {
             ctx.fillStyle = 'rgba(255,255,255,0.1)';
             ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 150, 20);
           }
         }
-      }, 1000 / 30); // Target 30 FPS
+      }, 1000 / 30);
 
       const canvasStream = canvas.captureStream(30);
       tracks.push(canvasStream.getVideoTracks()[0]);
@@ -135,7 +133,6 @@ const formatTime = (ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit'
 const formatDay = (ts) => { const d = new Date(ts), t = new Date(), y = new Date(t); y.setDate(y.getDate()-1); if(d.toDateString()===t.toDateString()) return 'Today'; if(d.toDateString()===y.toDateString()) return 'Yesterday'; return d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
 const isSameDay = (ts1, ts2) => new Date(ts1).toDateString() === new Date(ts2).toDateString();
 
-// --- Sub-Components ---
 const CustomAudioPlayer = ({ src, t }) => {
   const audioRef = useRef(null); const [isPlaying, setIsPlaying] = useState(false); const [progress, setProgress] = useState(0);
   const togglePlay = (e) => { e.stopPropagation(); if (isPlaying) audioRef.current.pause(); else audioRef.current.play(); setIsPlaying(!isPlaying); };
@@ -307,17 +304,18 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const messagesContainerRef = useRef(null); const messagesEndRef = useRef(null); const fileInputRef = useRef(null); const prevMsgCount = useRef(0);
 
   // --- WebRTC States ---
-  const [callState, setCallState] = useState('idle'); // idle, prompting, calling, ringing, connected
+  const [callState, setCallState] = useState('idle');
   const callStateRef = useRef('idle'); 
   const [callDuration, setCallDuration] = useState(0);
   const callDurationRef = useRef(0); 
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
   
+  // React State for dynamic stream rendering (Fixes the invisible media bug)
+  const [remoteStream, setRemoteStream] = useState(null);
+  
   const peerConnection = useRef(null);
   const localStreamRef = useRef(null);
-  const remoteMediaRef = useRef(null);
-  const localVideoRef = useRef(null);
   const audioContextRef = useRef(null);
   const canvasIntervalRef = useRef(null);
   const callDurationTimer = useRef(null);
@@ -329,26 +327,15 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   const isGroup = chatData?.isGroup;
   let chatName = "Unknown Channel"; let chatAvatar = null; let memberCount = chatData?.participants?.length || 0;
-  
   const otherUserId = isGroup ? null : chatData?.participants?.find(id => id !== user.uid);
   let someoneIsTyping = false; let typingName = '';
   
   if (chatData?.typing) { const typists = Object.keys(chatData.typing).filter(id => id !== user.uid && chatData.typing[id]); if (typists.length > 0) { someoneIsTyping = true; const typistObj = usersList.find(u => u.uid === typists[0]); typingName = typistObj ? typistObj.displayName : 'Agent'; } }
   
-  if (isGroup) { 
-    chatName = chatData?.name || "Group Server"; 
-  } else { 
-    const otherUserAgent = usersList.find(u => u.uid === otherUserId); 
-    chatName = chatData?.customName || otherUserAgent?.displayName || chatData?.participantNames?.[otherUserId] || 'Unknown Agent'; 
-    chatAvatar = otherUserAgent?.avatarData || null; 
-  }
+  if (isGroup) { chatName = chatData?.name || "Group Server"; } 
+  else { const otherUserAgent = usersList.find(u => u.uid === otherUserId); chatName = chatData?.customName || otherUserAgent?.displayName || chatData?.participantNames?.[otherUserId] || 'Unknown Agent'; chatAvatar = otherUserAgent?.avatarData || null; }
 
-  const iceServers = {
-    iceServers: [
-      { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
-      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }
-    ]
-  };
+  const iceServers = { iceServers: [ { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }, { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' } ] };
 
   useEffect(() => { setMsgLimit(30); setEditingMsg(null); setReplyingTo(null); setInputText(''); }, [threadId]);
   useEffect(() => { decryptionCache.current = {}; }, [encryptionKeys]);
@@ -398,15 +385,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     return () => unsubscribe();
   }, [threadId, user.uid, callState]);
 
-  // Apply streams to Video Elements once connected
-  useEffect(() => {
-    if (callState === 'connected') {
-      if (localVideoRef.current && localStreamRef.current && isVideoEnabled) {
-        localVideoRef.current.srcObject = localStreamRef.current;
-      }
-    }
-  }, [callState, isVideoEnabled]);
-
   const startCall = async (mode) => {
     const isVideo = mode === 'video_raw' || mode === 'video_blur' || mode === 'video_jam';
     const useAudioMask = mode === 'audio_masked';
@@ -421,10 +399,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     };
 
     peerConnection.current.ontrack = (event) => {
-      if (remoteMediaRef.current) { 
-        remoteMediaRef.current.srcObject = event.streams[0]; 
-        remoteMediaRef.current.play(); 
-      }
+      if (event.streams && event.streams[0]) setRemoteStream(event.streams[0]);
     };
 
     try {
@@ -462,17 +437,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       if (event.candidate) addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { senderId: user.uid, candidate: event.candidate.toJSON() });
     };
     peerConnection.current.ontrack = (event) => {
-      if (remoteMediaRef.current) { 
-        remoteMediaRef.current.srcObject = event.streams[0]; 
-        remoteMediaRef.current.play(); 
-      }
+      if (event.streams && event.streams[0]) setRemoteStream(event.streams[0]);
     };
 
     try {
       const callDoc = await getDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'));
       const callData = callDoc.data();
       
-      // The answerer honors the video request of the caller
       const constraints = callData.isVideo ? { audio: true, video: { facingMode: "user", width: 640, height: 480 } } : { audio: true };
       const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
       
@@ -523,6 +494,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     if (canvasIntervalRef.current) { clearInterval(canvasIntervalRef.current); canvasIntervalRef.current = null; }
     clearInterval(callDurationTimer.current); 
     setCallDuration(0); callDurationRef.current = 0; setIsMuted(false); setIsVideoEnabled(false);
+    setRemoteStream(null);
     updateCallState('idle');
   };
 
@@ -712,9 +684,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   return (
     <div className="flex-1 flex flex-col relative bg-[#050508] min-h-0 overflow-x-hidden" onClick={() => { setActiveMenu(null); setIsTimeDropdownOpen(false); setShowStickerPicker(false); }} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
       
-      {/* Invisible Global Video element used for audio output and remote video sourcing */}
-      <video ref={remoteMediaRef} autoPlay playsInline className="hidden" />
-
       {/* --- WEBRTC CALLING OVERLAYS --- */}
       {callState === 'prompting' && (
         <div className="absolute inset-0 z-[500] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-fade-in overflow-y-auto">
@@ -758,17 +727,23 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
             <>
               {/* Remote Video (Main Feed) */}
               <video 
-                ref={el => { if (el && remoteMediaRef.current) el.srcObject = remoteMediaRef.current.srcObject; }} 
                 autoPlay playsInline 
-                className="w-full h-full object-cover" 
+                className="w-full h-full object-cover"
+                ref={node => { if (node && node.srcObject !== remoteStream) node.srcObject = remoteStream; }}
               />
               {/* Local Video (Picture-in-Picture) */}
               <div className="absolute top-6 right-6 w-28 h-40 md:w-40 md:h-56 bg-black border border-white/20 rounded-xl overflow-hidden shadow-2xl z-10">
-                <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                <video 
+                  autoPlay playsInline muted 
+                  className="w-full h-full object-cover"
+                  ref={node => { if (node && node.srcObject !== localStreamRef.current) node.srcObject = localStreamRef.current; }}
+                />
               </div>
             </>
           ) : (
             <>
+              {/* Audio Only Mode */}
+              <audio autoPlay playsInline ref={node => { if (node && node.srcObject !== remoteStream) node.srcObject = remoteStream; }} />
               <div className={`w-24 h-24 rounded-full bg-black border ${isMuted ? 'border-amber-500/50' : 'border-green-500/50'} flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(34,197,94,0.2)]`}><User className={`w-10 h-10 ${isMuted ? 'text-amber-500' : 'text-green-400'}`} /></div>
               <h2 className="text-xl font-bold text-white mb-1">Link Established</h2>
             </>
