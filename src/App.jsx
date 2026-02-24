@@ -8,7 +8,7 @@ import {
   Palette, Reply, X, Smile, Mic, Square, Play, Pause, 
   ChevronLeft, Fingerprint, Search, Plus, Trash2, Settings, 
   Camera, PenLine, RefreshCw, Copy, Paperclip, CheckCheck, Flame, Clock, ChevronDown, Image as ImageIcon,
-  ArrowDown, Sticker, Edit2, Phone, PhoneCall, PhoneOff, MicOff, Video, VideoOff
+  ArrowDown, Sticker, Edit2, Phone, PhoneCall, PhoneOff, MicOff, Volume2
 } from 'lucide-react';
 
 // --- Firebase Initialization ---
@@ -63,44 +63,42 @@ const parseMarkdown = (text) => {
   return { __html: html };
 };
 
-// --- WebRTC Media Pipeline (Native Streams Only) ---
-const setupMaskedMedia = async (rawStream, useAudioMask) => {
-  let audioCtx = null;
-  let processedStream = rawStream;
+// --- Masked Audio (Deep Pitch EQ) ---
+const setupMaskedAudio = async (rawStream) => {
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioCtx.createMediaStreamSource(rawStream);
+  const destination = audioCtx.createMediaStreamDestination();
 
-  if (useAudioMask && rawStream.getAudioTracks().length > 0) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = audioCtx.createMediaStreamSource(rawStream);
-    const destination = audioCtx.createMediaStreamDestination();
-    
-    const bassBoost = audioCtx.createBiquadFilter(); 
-    bassBoost.type = 'peaking'; bassBoost.frequency.value = 100; bassBoost.Q.value = 1.0; bassBoost.gain.value = 15;
-    
-    const highCut = audioCtx.createBiquadFilter(); 
-    highCut.type = 'highshelf'; highCut.frequency.value = 4000; highCut.gain.value = -5;
-    
-    source.connect(bassBoost); 
-    bassBoost.connect(highCut); 
-    highCut.connect(destination);
-    
-    const tracks = [destination.stream.getAudioTracks()[0]];
-    if (rawStream.getVideoTracks().length > 0) {
-      tracks.push(rawStream.getVideoTracks()[0]);
-    }
-    processedStream = new MediaStream(tracks);
-  }
+  // 1. Boost deep bass frequencies to simulate a deeper, booming voice
+  const bassBoost = audioCtx.createBiquadFilter();
+  bassBoost.type = 'peaking';
+  bassBoost.frequency.value = 100; // Target the fundamental deep vocal range
+  bassBoost.Q.value = 1.0;
+  bassBoost.gain.value = 15; // 15dB boost
 
-  return { processedStream, audioCtx };
+  // 2. Slightly cut the highs to make it sound more hidden/muffled
+  const highCut = audioCtx.createBiquadFilter();
+  highCut.type = 'highshelf';
+  highCut.frequency.value = 4000;
+  highCut.gain.value = -5; // -5dB cut
+
+  source.connect(bassBoost);
+  bassBoost.connect(highCut);
+  highCut.connect(destination);
+
+  return { processedStream: destination.stream, audioCtx };
 };
 
 // --- Media Utils ---
 const createStickerFromImage = (b64) => new Promise((res, rej) => { const i = new Image(); i.src = b64; i.onload = () => { const c = document.createElement('canvas'); c.width = 256; c.height = 256; const ctx = c.getContext('2d'); const s = Math.min(i.width, i.height); ctx.drawImage(i, (i.width-s)/2, (i.height-s)/2, s, s, 0, 0, 256, 256); res(c.toDataURL('image/webp', 0.8)); }; i.onerror = rej; });
 const compressImage = (f) => new Promise((res, rej) => { const r = new FileReader(); r.readAsDataURL(f); r.onload = (e) => { const i = new Image(); i.src = e.target.result; i.onload = () => { const c = document.createElement('canvas'); let w = i.width, h = i.height; if(w>h){if(w>600){h*=600/w;w=600;}}else{if(h>600){w*=600/h;h=600;}} c.width=w; c.height=h; c.getContext('2d').drawImage(i,0,0,w,h); res(c.toDataURL('image/jpeg', 0.6)); }; i.onerror=rej; }; r.onerror=rej; });
+const compressAvatar = (f) => new Promise((res, rej) => { const r = new FileReader(); r.readAsDataURL(f); r.onload = (e) => { const i = new Image(); i.src = e.target.result; i.onload = () => { const c = document.createElement('canvas'); let w = i.width, h = i.height; if(w>h){h*=150/w;w=150;}else{w*=150/h;h=150;} c.width=w; c.height=h; c.getContext('2d').drawImage(i,0,0,w,h); res(c.toDataURL('image/jpeg', 0.6)); }; i.onerror=rej; }; r.onerror=rej; });
 const blobToBase64 = (b) => new Promise((res, rej) => { const r = new FileReader(); r.readAsDataURL(b); r.onloadend = () => res(r.result); r.onerror = rej; });
 const formatTime = (ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const formatDay = (ts) => { const d = new Date(ts), t = new Date(), y = new Date(t); y.setDate(y.getDate()-1); if(d.toDateString()===t.toDateString()) return 'Today'; if(d.toDateString()===y.toDateString()) return 'Yesterday'; return d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
 const isSameDay = (ts1, ts2) => new Date(ts1).toDateString() === new Date(ts2).toDateString();
 
+// --- Sub-Components ---
 const CustomAudioPlayer = ({ src, t }) => {
   const audioRef = useRef(null); const [isPlaying, setIsPlaying] = useState(false); const [progress, setProgress] = useState(0);
   const togglePlay = (e) => { e.stopPropagation(); if (isPlaying) audioRef.current.pause(); else audioRef.current.play(); setIsPlaying(!isPlaying); };
@@ -254,6 +252,7 @@ const MessageItem = ({ msg, index, isMine, isGroup, isConsecutive, repliedMsg, h
   );
 };
 
+// --- 3. THE CHAT INTERFACE & WEBRTC LOGIC ---
 const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, goBack, changeKey, deleteChat, t, themeMode }) => {
   const [messages, setMessages] = useState([]);
   const [searchQuery, setSearchQuery] = useState(''); const [showSearch, setShowSearch] = useState(false);
@@ -271,20 +270,18 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const messagesContainerRef = useRef(null); const messagesEndRef = useRef(null); const fileInputRef = useRef(null); const prevMsgCount = useRef(0);
 
   // --- WebRTC States ---
-  const [callState, setCallState] = useState('idle');
-  const callStateRef = useRef('idle'); 
+  const [callState, setCallState] = useState('idle'); // idle, prompting, calling, ringing, connected
+  const callStateRef = useRef('idle'); // Ref tracking to fix double-call bug
+  const [isMasked, setIsMasked] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const callDurationRef = useRef(0); 
   const [isMuted, setIsMuted] = useState(false);
-  const [isVideoEnabled, setIsVideoEnabled] = useState(false);
-  const [isLocalVideoOff, setIsLocalVideoOff] = useState(false);
-  const [remoteStream, setRemoteStream] = useState(null);
   
   const peerConnection = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteAudioRef = useRef(null);
   const audioContextRef = useRef(null);
   const callDurationTimer = useRef(null);
-  const pendingCandidates = useRef([]); // ICE Candidate Queue
 
   const updateCallState = (newState) => {
     setCallState(newState);
@@ -293,26 +290,31 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   const isGroup = chatData?.isGroup;
   let chatName = "Unknown Channel"; let chatAvatar = null; let memberCount = chatData?.participants?.length || 0;
+  
   const otherUserId = isGroup ? null : chatData?.participants?.find(id => id !== user.uid);
   let someoneIsTyping = false; let typingName = '';
   
   if (chatData?.typing) { const typists = Object.keys(chatData.typing).filter(id => id !== user.uid && chatData.typing[id]); if (typists.length > 0) { someoneIsTyping = true; const typistObj = usersList.find(u => u.uid === typists[0]); typingName = typistObj ? typistObj.displayName : 'Agent'; } }
   
-  if (isGroup) { chatName = chatData?.name || "Group Server"; } 
-  else { const otherUserAgent = usersList.find(u => u.uid === otherUserId); chatName = chatData?.customName || otherUserAgent?.displayName || chatData?.participantNames?.[otherUserId] || 'Unknown Agent'; chatAvatar = otherUserAgent?.avatarData || null; }
+  if (isGroup) { 
+    chatName = chatData?.name || "Group Server"; 
+  } else { 
+    const otherUserAgent = usersList.find(u => u.uid === otherUserId); 
+    chatName = chatData?.customName || otherUserAgent?.displayName || chatData?.participantNames?.[otherUserId] || 'Unknown Agent'; 
+    chatAvatar = otherUserAgent?.avatarData || null; 
+  }
 
-  // Simplified STUN servers (removed free TURN to prevent packet drops)
   const iceServers = {
     iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
+      { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }
     ]
   };
 
   useEffect(() => { setMsgLimit(30); setEditingMsg(null); setReplyingTo(null); setInputText(''); }, [threadId]);
   useEffect(() => { decryptionCache.current = {}; }, [encryptionKeys]);
 
-  // --- WebRTC Signaling Listener ---
+  // --- WebRTC Signaling Listener (Fixed Dependency Bug) ---
   useEffect(() => {
     if (isGroup) return;
     const callDocRef = doc(db, 'chat_threads', threadId, 'call_signal', 'data');
@@ -323,17 +325,11 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       const currentState = callStateRef.current;
 
       if (data.status === 'ringing' && data.callerId !== user.uid && currentState === 'idle') {
-        setIsVideoEnabled(data.isVideo || false);
         updateCallState('ringing');
       } else if (data.status === 'answered' && data.callerId === user.uid && peerConnection.current) {
         if (peerConnection.current.signalingState === "have-local-offer") {
            const remoteDesc = new RTCSessionDescription(data.answer);
            await peerConnection.current.setRemoteDescription(remoteDesc);
-           
-           // Release queued ICE candidates now that handshake is done
-           pendingCandidates.current.forEach(c => peerConnection.current.addIceCandidate(c).catch(console.error));
-           pendingCandidates.current = [];
-           
            updateCallState('connected'); 
            startCallTimer();
         }
@@ -343,6 +339,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     });
     return () => unsubscribe();
   }, [threadId, user.uid, isGroup]); 
+  // Notice callState is REMOVED from dependencies so the snapshot doesn't rebuild and drop signals
 
   // --- WebRTC ICE Candidate Listener ---
   useEffect(() => {
@@ -352,13 +349,9 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       snapshot.docChanges().forEach((change) => {
         if (change.type === 'added') {
           const data = change.doc.data();
-          if (data.senderId !== user.uid && peerConnection.current) {
+          if (data.senderId !== user.uid) {
             const candidate = new RTCIceCandidate(data.candidate);
-            if (peerConnection.current.remoteDescription) {
-                peerConnection.current.addIceCandidate(candidate).catch(e => console.error("ICE error:", e));
-            } else {
-                pendingCandidates.current.push(candidate);
-            }
+            peerConnection.current.addIceCandidate(candidate).catch(e => console.error(e));
           }
         }
       });
@@ -366,53 +359,35 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     return () => unsubscribe();
   }, [threadId, user.uid, callState]);
 
-  const startCall = async (mode) => {
-    const isVideo = mode === 'video_raw';
-    const useAudioMask = mode === 'audio_masked';
+  const startCall = async (useMask) => {
+    setIsMasked(useMask); updateCallState('calling');
+    peerConnection.current = new RTCPeerConnection(iceServers);
     
-    setIsVideoEnabled(isVideo);
-    updateCallState('calling');
+    peerConnection.current.onicecandidate = (event) => {
+      if (event.candidate) addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { senderId: user.uid, candidate: event.candidate.toJSON() });
+    };
+
+    peerConnection.current.ontrack = (event) => {
+      if (remoteAudioRef.current) { remoteAudioRef.current.srcObject = event.streams[0]; remoteAudioRef.current.play(); }
+    };
 
     try {
-      // FIX: Clean up old candidates BEFORE starting the new connection
-      const oldCandidates = await getDocs(collection(db, 'chat_threads', threadId, 'call_candidates'));
-      const deletePromises = oldCandidates.docs.map(c => deleteDoc(c.ref));
-      await Promise.all(deletePromises);
-
-      peerConnection.current = new RTCPeerConnection(iceServers);
-      
-      peerConnection.current.onicecandidate = (event) => {
-        if (event.candidate) {
-          addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { 
-            senderId: user.uid, candidate: event.candidate.toJSON() 
-          }).catch(err => console.error("Firebase Rule Blocked ICE:", err));
-        }
-      };
-
-      peerConnection.current.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          // FIX: Clone the stream so React detects the state change when new tracks are added
-          setRemoteStream(new MediaStream(event.streams[0].getTracks()));
-        }
-      };
-
-      const constraints = isVideo ? { audio: true, video: { facingMode: "user" } } : { audio: true };
-      const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
-      
-      const { processedStream, audioCtx } = await setupMaskedMedia(rawStream, useAudioMask);
-      
-      audioContextRef.current = audioCtx; 
-      localStreamRef.current = processedStream; 
-      
-      processedStream.getTracks().forEach(track => peerConnection.current.addTrack(track, processedStream));
+      const rawStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (useMask) {
+        const { processedStream, audioCtx } = await setupMaskedAudio(rawStream);
+        audioContextRef.current = audioCtx; localStreamRef.current = rawStream; 
+        processedStream.getTracks().forEach(track => peerConnection.current.addTrack(track, processedStream));
+      } else {
+        localStreamRef.current = rawStream;
+        rawStream.getTracks().forEach(track => peerConnection.current.addTrack(track, rawStream));
+      }
 
       const offer = await peerConnection.current.createOffer();
       await peerConnection.current.setLocalDescription(offer);
 
-      await setDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { 
-        status: 'ringing', callerId: user.uid, offer: { type: offer.type, sdp: offer.sdp }, 
-        isVideo: isVideo, timestamp: Date.now() 
-      }).catch(err => console.error("Firebase Rule Blocked Signal:", err));
+      await setDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'ringing', callerId: user.uid, offer: { type: offer.type, sdp: offer.sdp }, isMasked: useMask, timestamp: Date.now() });
+      const oldCandidates = await getDocs(collection(db, 'chat_threads', threadId, 'call_candidates'));
+      oldCandidates.forEach(c => deleteDoc(c.ref));
 
     } catch (err) { 
       console.error("Call Setup Error:", err);
@@ -422,42 +397,23 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   };
 
   const answerCall = async () => {
-    try {
-      peerConnection.current = new RTCPeerConnection(iceServers);
-      
-      peerConnection.current.onicecandidate = (event) => {
-        if (event.candidate) {
-          addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { 
-            senderId: user.uid, candidate: event.candidate.toJSON() 
-          }).catch(err => console.error("Firebase Rule Blocked ICE:", err));
-        }
-      };
+    peerConnection.current = new RTCPeerConnection(iceServers);
+    peerConnection.current.onicecandidate = (event) => {
+      if (event.candidate) addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { senderId: user.uid, candidate: event.candidate.toJSON() });
+    };
+    peerConnection.current.ontrack = (event) => {
+      if (remoteAudioRef.current) { remoteAudioRef.current.srcObject = event.streams[0]; remoteAudioRef.current.play(); }
+    };
 
-      peerConnection.current.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          // FIX: Clone the stream here as well
-          setRemoteStream(new MediaStream(event.streams[0].getTracks()));
-        }
-      };
+    try {
+      const rawStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = rawStream;
+      rawStream.getTracks().forEach(track => peerConnection.current.addTrack(track, rawStream));
 
       const callDoc = await getDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'));
       const callData = callDoc.data();
-      
-      const constraints = callData.isVideo ? { audio: true, video: { facingMode: "user" } } : { audio: true };
-      const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
-      
-      const { processedStream, audioCtx } = await setupMaskedMedia(rawStream, false);
-      
-      audioContextRef.current = audioCtx; 
-      localStreamRef.current = processedStream;
-      
-      processedStream.getTracks().forEach(track => peerConnection.current.addTrack(track, processedStream));
 
       await peerConnection.current.setRemoteDescription(new RTCSessionDescription(callData.offer));
-      
-      pendingCandidates.current.forEach(c => peerConnection.current.addIceCandidate(c).catch(console.error));
-      pendingCandidates.current = [];
-
       const answer = await peerConnection.current.createAnswer();
       await peerConnection.current.setLocalDescription(answer);
 
@@ -474,10 +430,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     const currentDuration = callDurationRef.current;
     await setDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'ended' });
     
+    // Automatically log the call in the chat feed
     try {
       const activeKey = encryptionKeys[encryptionKeys.length - 1];
-      const callType = isVideoEnabled ? 'Video Call' : 'Audio Call';
-      const msgText = currentDuration > 0 ? `📞 ${callType} - ${formatCallTime(currentDuration)}` : `📞 Missed ${callType}`;
+      const msgText = currentDuration > 0 ? `📞 Audio Call - ${formatCallTime(currentDuration)}` : `📞 Missed Call`;
       const enc = await encryptText(msgText, activeKey);
       await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { 
         senderId: user.uid, senderName: user.displayName, text: enc, type: 'text', timestamp: Date.now(), replyToId: null, reactions: {}, expiresAt: null, isEdited: false 
@@ -493,20 +449,24 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     if (peerConnection.current) { peerConnection.current.close(); peerConnection.current = null; }
     if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(track => track.stop()); localStreamRef.current = null; }
     if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
-    
     clearInterval(callDurationTimer.current); 
-    pendingCandidates.current = [];
-    setRemoteStream(null);
-    setCallDuration(0); callDurationRef.current = 0; setIsMuted(false); setIsVideoEnabled(false); setIsLocalVideoOff(false);
+    setCallDuration(0); 
+    callDurationRef.current = 0;
+    setIsMuted(false); 
     updateCallState('idle');
   };
 
   const initiateCallPrompt = () => { updateCallState('prompting'); };
 
   const startCallTimer = () => { 
-    setCallDuration(0); callDurationRef.current = 0;
+    setCallDuration(0); 
+    callDurationRef.current = 0;
     callDurationTimer.current = setInterval(() => {
-      setCallDuration(prev => { const next = prev + 1; callDurationRef.current = next; return next; });
+      setCallDuration(prev => {
+         const next = prev + 1;
+         callDurationRef.current = next;
+         return next;
+      });
     }, 1000); 
   };
   const formatCallTime = (seconds) => { const m = Math.floor(seconds / 60); const s = seconds % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; };
@@ -515,16 +475,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     if (localStreamRef.current) {
       const audioTrack = localStreamRef.current.getAudioTracks()[0];
       if (audioTrack) { audioTrack.enabled = !audioTrack.enabled; setIsMuted(!audioTrack.enabled); }
-    }
-  };
-
-  const toggleVideo = () => {
-    if (localStreamRef.current) {
-      const videoTrack = localStreamRef.current.getVideoTracks()[0];
-      if (videoTrack) { 
-        videoTrack.enabled = !videoTrack.enabled; 
-        setIsLocalVideoOff(!videoTrack.enabled);
-      }
     }
   };
 
@@ -689,96 +639,51 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   return (
     <div className="flex-1 flex flex-col relative bg-[#050508] min-h-0 overflow-x-hidden" onClick={() => { setActiveMenu(null); setIsTimeDropdownOpen(false); setShowStickerPicker(false); }} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
-      
+      <audio ref={remoteAudioRef} autoPlay />
+
       {/* --- WEBRTC CALLING OVERLAYS --- */}
       {callState === 'prompting' && (
-        <div className="absolute inset-0 z-[500] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-fade-in overflow-y-auto">
-          <ShieldAlert className={`w-12 h-12 ${t.text} mb-4`} />
-          <h2 className="text-2xl font-mono text-white mb-6 text-center">Secure Uplink</h2>
-          <div className="flex flex-col gap-3 w-full max-w-xs mb-8">
-            <button onClick={() => startCall('audio_raw')} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2 border border-white/5"><Phone className="w-5 h-5"/> Standard Audio</button>
-            <button onClick={() => startCall('audio_masked')} className={`py-4 rounded-xl bg-gradient-to-r ${t.btnGrad} text-white font-bold shadow-lg flex items-center justify-center gap-2`}><MicOff className="w-5 h-5"/> Masked Audio</button>
-            <button onClick={() => startCall('video_raw')} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2 border border-white/5"><Video className="w-5 h-5"/> Standard Video</button>
+        <div className="absolute inset-0 z-[500] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-fade-in">
+          <ShieldAlert className={`w-16 h-16 ${t.text} mb-6`} />
+          <h2 className="text-2xl font-mono text-white mb-2 text-center">Secure Uplink</h2>
+          <p className="text-sm text-slate-400 mb-8 text-center max-w-sm">Apply cryptographic voice masking to your audio stream? This severely distorts the audio to prevent voice-print identification.</p>
+          <div className="flex flex-col w-full max-w-xs gap-3">
+            <button onClick={() => startCall(true)} className={`py-4 rounded-xl bg-gradient-to-r ${t.btnGrad} text-white font-bold shadow-[0_0_20px_rgba(0,0,0,0.5)] flex items-center justify-center gap-2`}><MicOff className="w-5 h-5"/> Initiate Masked Call</button>
+            <button onClick={() => startCall(false)} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2"><Volume2 className="w-5 h-5"/> Standard Encrypted Call</button>
+            <button onClick={() => updateCallState('idle')} className="mt-4 py-3 text-slate-500 hover:text-white font-bold">Cancel</button>
           </div>
-          <button onClick={() => updateCallState('idle')} className="py-3 px-6 rounded-lg text-slate-500 hover:text-white font-bold hover:bg-white/5 transition-all">Cancel Request</button>
         </div>
       )}
 
       {callState === 'calling' && (
         <div className="absolute inset-0 z-[500] bg-[#0a0a0f] flex flex-col items-center justify-center p-6 animate-fade-in">
-          <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-pulse`}>{isVideoEnabled ? <Video className={`w-10 h-10 ${t.text}`} /> : <PhoneCall className={`w-10 h-10 ${t.text}`} />}</div>
-          <h2 className="text-xl font-bold text-white mb-2">Establishing Uplink...</h2>
-          <p className="text-xs text-slate-500 mb-12">P2P Handshake initiated</p>
+          <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-pulse`}><PhoneCall className={`w-10 h-10 ${t.text}`} /></div>
+          <h2 className="text-xl font-bold text-white mb-2">Calling Agent...</h2>
+          <p className="text-xs text-slate-500 mb-12">Establishing P2P WebRTC Handshake</p>
           <button onClick={endCall} className="w-16 h-16 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-6 h-6 text-white" /></button>
         </div>
       )}
 
       {callState === 'ringing' && (
         <div className="absolute inset-0 z-[500] bg-[#0a0a0f] flex flex-col items-center justify-center p-6 animate-fade-in">
-          <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-bounce`}>{isVideoEnabled ? <Video className={`w-10 h-10 ${t.text}`} /> : <Phone className={`w-10 h-10 ${t.text}`} />}</div>
-          <h2 className="text-xl font-bold text-white mb-2">Incoming Secure {isVideoEnabled ? 'Video' : 'Audio'}</h2>
-          <p className="text-xs text-slate-500 mb-12">End-to-End Encrypted</p>
+          <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-bounce`}><Phone className={`w-10 h-10 ${t.text}`} /></div>
+          <h2 className="text-xl font-bold text-white mb-2">Incoming Secure Call</h2>
+          <p className="text-xs text-slate-500 mb-12">End-to-End Encrypted Voice</p>
           <div className="flex gap-8">
             <button onClick={endCall} className="w-16 h-16 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-6 h-6 text-white" /></button>
-            <button onClick={answerCall} className="w-16 h-16 bg-green-500 hover:bg-green-400 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-transform hover:scale-110 animate-pulse">{isVideoEnabled ? <Video className="w-6 h-6 text-white" /> : <Phone className="w-6 h-6 text-white" />}</button>
+            <button onClick={answerCall} className="w-16 h-16 bg-green-500 hover:bg-green-400 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-transform hover:scale-110 animate-pulse"><Phone className="w-6 h-6 text-white" /></button>
           </div>
         </div>
       )}
 
       {callState === 'connected' && (
-        <div className={`absolute inset-0 z-[500] flex flex-col items-center justify-center animate-fade-in overflow-hidden ${isVideoEnabled ? 'bg-[#050508]' : 'bg-[#0a0a0f]'}`}>
-          {isVideoEnabled ? (
-            <>
-              {/* Remote Video Stream */}
-              <video 
-                autoPlay 
-                playsInline 
-                ref={(videoNode) => {
-                  if (videoNode && remoteStream && videoNode.srcObject !== remoteStream) {
-                    videoNode.srcObject = remoteStream;
-                  }
-                }}
-                className="w-full h-full object-contain bg-black" 
-              />
-              
-              {/* Local Picture-in-Picture */}
-              <div className="absolute top-6 right-6 w-28 h-40 md:w-40 md:h-56 bg-black border border-white/20 rounded-xl overflow-hidden shadow-2xl z-10">
-                <video 
-                  autoPlay 
-                  playsInline 
-                  muted 
-                  ref={(videoNode) => {
-                    if (videoNode && localStreamRef.current && videoNode.srcObject !== localStreamRef.current) {
-                      videoNode.srcObject = localStreamRef.current;
-                    }
-                  }}
-                  className="w-full h-full object-cover transform scale-x-[-1]" 
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              {/* Audio Only Mode */}
-              <audio 
-                autoPlay 
-                playsInline 
-                ref={(audioNode) => {
-                  if (audioNode && remoteStream && audioNode.srcObject !== remoteStream) {
-                    audioNode.srcObject = remoteStream;
-                  }
-                }}
-              />
-              <div className={`w-24 h-24 rounded-full bg-black border ${isMuted ? 'border-amber-500/50' : 'border-green-500/50'} flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(34,197,94,0.2)]`}><User className={`w-10 h-10 ${isMuted ? 'text-amber-500' : 'text-green-400'}`} /></div>
-              <h2 className="text-xl font-bold text-white mb-1">Link Established</h2>
-            </>
-          )}
-
-          {/* Call Controls Overlay */}
-          <div className={`absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-6 px-8 py-4 bg-black/60 backdrop-blur-md rounded-full border border-white/10 ${isVideoEnabled ? 'shadow-2xl' : ''}`}>
-             <span className="font-mono text-green-400 font-bold mr-2">{formatCallTime(callDuration)}</span>
-             <button onClick={toggleMute} className={`w-12 h-12 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${isMuted ? 'bg-amber-500/20 text-amber-500 border border-amber-500/50' : 'bg-white/10 text-white'}`}>{isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}</button>
-             {isVideoEnabled && ( <button onClick={toggleVideo} className={`w-12 h-12 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${isLocalVideoOff ? 'bg-red-500/20 text-red-500 border border-red-500/50' : 'bg-white/10 text-white'}`}>{isLocalVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}</button> )}
-             <button onClick={endCall} className="w-12 h-12 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-5 h-5 text-white" /></button>
+        <div className="absolute inset-0 z-[500] bg-[#0a0a0f] flex flex-col items-center justify-center p-6 animate-fade-in">
+          <div className={`w-24 h-24 rounded-full bg-black border ${isMuted ? 'border-amber-500/50' : 'border-green-500/50'} flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(34,197,94,0.2)]`}><User className={`w-10 h-10 ${isMuted ? 'text-amber-500' : 'text-green-400'}`} /></div>
+          <h2 className="text-xl font-bold text-white mb-1">Link Established</h2>
+          <p className="text-2xl font-mono text-green-400 mb-12">{formatCallTime(callDuration)}</p>
+          <div className="flex gap-6">
+             <button onClick={toggleMute} className={`w-16 h-16 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${isMuted ? 'bg-amber-500/20 text-amber-500 border border-amber-500/50' : 'bg-white/10 text-white'}`}>{isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}</button>
+             <button onClick={endCall} className="w-16 h-16 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-6 h-6 text-white" /></button>
           </div>
         </div>
       )}
@@ -839,7 +744,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {!isGroup && (<button onClick={initiateCallPrompt} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-green-400 hover:bg-green-500/10 mr-1`} title="Establish Secure Uplink"><Video className="w-4 h-4" /></button>)}
+          {!isGroup && (<button onClick={initiateCallPrompt} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-green-400 hover:bg-green-500/10 mr-1`} title="Secure Voice Call"><PhoneCall className="w-4 h-4" /></button>)}
           <button onClick={changeKey} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-white hover:bg-white/5`} title="Update Encryption Key"><Key className="w-4 h-4" /></button>
           <button onClick={() => setShowBurnModal(true)} className={`p-2 rounded-lg transition-all text-slate-500 hover:text-orange-400 hover:bg-orange-500/10`} title="Send Burn Message"><Flame className="w-4 h-4" /></button>
           <button onClick={() => { setShowSearch(!showSearch); setSearchQuery(''); }} className={`p-2 rounded-lg transition-all ${showSearch ? 'text-white bg-white/10' : 'text-slate-500 hover:text-white hover:bg-white/5'}`} title="Search Messages"><Search className="w-4 h-4" /></button>
@@ -912,132 +817,166 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       </div>
     </div>
   );
-}
+};
 
-// --- MAIN APP WRAPPER ---
-const App = () => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [themeMode, setThemeMode] = useState('cyberpunk');
-  const t = themeStyles[themeMode] || themeStyles.cyberpunk;
-  
-  const [activeThreadId, setActiveThreadId] = useState(null);
-  const [threads, setThreads] = useState([]);
-  const [usersList, setUsersList] = useState([]);
-  const [encryptionKeys, setEncryptionKeys] = useState(['default-commslink-key-123']);
+// --- 4. MAIN APP ROUTER ---
+export default function App() {
+  const [user, setUser] = useState(null); const [currentUserData, setCurrentUserData] = useState(null); const [usersList, setUsersList] = useState([]);
+  const [chatThreads, setChatThreads] = useState([]); const [activeChat, setActiveChat] = useState(null); const [encryptionKeys, setEncryptionKeys] = useState([]); 
+  const [themeMode, setThemeMode] = useState(() => localStorage.getItem('commslink_theme') || 'cyberpunk'); const t = themeStyles[themeMode];
+  const [showKeyModal, setShowKeyModal] = useState(false); const [showProfileModal, setShowProfileModal] = useState(false); const [targetThread, setTargetThread] = useState(null); const [tempKey, setTempKey] = useState('');
+  const [connectMode, setConnectMode] = useState('agent'); const [searchAgentId, setSearchAgentId] = useState(''); const [groupNameInput, setGroupNameInput] = useState(''); const [isSearching, setIsSearching] = useState(false);
+  const [editName, setEditName] = useState(''); const [isSavingProfile, setIsSavingProfile] = useState(false); const avatarInputRef = useRef(null); const [copiedId, setCopiedId] = useState(false);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
+  useEffect(() => { const unsub = onAuthStateChanged(auth, async (u) => { setUser(u); if (u) await updateDoc(doc(db, 'users', u.uid), { lastSeen: Date.now() }).catch(()=>{}); }); return () => unsub(); }, []);
+  useEffect(() => { if (!user) return; const unsub = onSnapshot(collection(db, 'users'), (snapshot) => { const others = []; snapshot.forEach(doc => { if (doc.id === user.uid) { setCurrentUserData(doc.data()); if (!editName) setEditName(doc.data().displayName || ''); } else others.push(doc.data()); }); setUsersList(others); }); return () => unsub(); }, [user]);
+  useEffect(() => { if (!user) return; const q = query(collection(db, 'chat_threads'), where('participants', 'array-contains', user.uid)); const unsub = onSnapshot(q, (snapshot) => { const threads = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); threads.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0)); setChatThreads(threads); }); return () => unsub(); }, [user]);
 
   useEffect(() => {
-    if (!user) return;
-    
-    // Listen to all agents
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
-      setUsersList(snap.docs.map(doc => doc.data()));
-    });
-    
-    // Listen to threads the user is in
-    const qThreads = query(collection(db, 'chat_threads'), where('participants', 'array-contains', user.uid));
-    const unsubThreads = onSnapshot(qThreads, (snap) => {
-      setThreads(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    const handlePopState = () => { if (activeChat) setActiveChat(null); };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [activeChat]);
 
-    return () => { unsubUsers(); unsubThreads(); };
-  }, [user]);
+  const toggleTheme = () => { const modes = Object.keys(themeStyles); const nextMode = modes[(modes.indexOf(themeMode) + 1) % modes.length]; setThemeMode(nextMode); localStorage.setItem('commslink_theme', nextMode); };
+  const handleLogout = () => { signOut(auth); setActiveChat(null); };
+  const handleUpdateProfile = async (e) => { e.preventDefault(); if (!editName.trim()) return; setIsSavingProfile(true); try { await updateDoc(doc(db, 'users', user.uid), { displayName: editName }); await updateProfile(user, { displayName: editName }); setShowProfileModal(false); } catch (err) { alert("Failed to update profile."); } setIsSavingProfile(false); };
+  const handleAvatarChange = async (e) => { const file = e.target.files[0]; if (!file) return; try { const b64 = await compressAvatar(file); await updateDoc(doc(db, 'users', user.uid), { avatarData: b64 }); } catch (err) { alert("Failed to update avatar."); } };
+  const copyAgentId = () => { if (currentUserData?.agentId) { navigator.clipboard.writeText(currentUserData.agentId); setCopiedId(true); setTimeout(() => setCopiedId(false), 2000); } };
+  const generateRandomGroup = () => { const adj = ['silent', 'dark', 'hidden', 'crypto', 'neon', 'shadow']; const nouns = ['vault', 'nexus', 'ghost', 'signal', 'pulse', 'void']; setGroupNameInput(`${adj[Math.floor(Math.random() * adj.length)]}-${nouns[Math.floor(Math.random() * nouns.length)]}-${Math.floor(1000 + Math.random() * 9000)}`); };
+  const handleGroupJoin = async (e) => { e.preventDefault(); if (!groupNameInput.trim()) return; setIsSearching(true); try { const safeGroupId = groupNameInput.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'); const groupRef = doc(db, 'chat_threads', safeGroupId); const groupSnap = await getDoc(groupRef); if (groupSnap.exists()) { if (!groupSnap.data().participants.includes(user.uid)) { await updateDoc(groupRef, { participants: arrayUnion(user.uid) }); } } else { await setDoc(groupRef, { isGroup: true, name: groupNameInput.trim(), participants: [user.uid], createdAt: Date.now(), lastActivity: Date.now() }); alert(`Successfully created new server: ${groupNameInput.trim()}`); } setGroupNameInput(''); triggerChatEntry({ id: safeGroupId, isGroup: true, name: groupNameInput.trim() }); } catch (err) { alert("Failed to connect to group."); } setIsSearching(false); };
+  const handleSearchAndCreateChat = async (e) => { e.preventDefault(); if (!searchAgentId.trim()) return; setIsSearching(true); try { const q = query(collection(db, 'users'), where('agentId', '==', searchAgentId.trim().toLowerCase())); const snap = await getDocs(q); if (snap.empty) { alert("Agent ID not found in the network."); setIsSearching(false); return; } const targetAgent = snap.docs[0].data(); if (targetAgent.uid === user.uid) { alert("You cannot start a chat with yourself."); setIsSearching(false); return; } const newThreadRef = await addDoc(collection(db, 'chat_threads'), { isGroup: false, participants: [user.uid, targetAgent.uid], participantNames: { [user.uid]: user.displayName, [targetAgent.uid]: targetAgent.displayName }, createdAt: Date.now(), lastActivity: Date.now(), lastRead: { [user.uid]: Date.now(), [targetAgent.uid]: 0 } }); setSearchAgentId(''); triggerChatEntry({ id: newThreadRef.id, participants: [user.uid, targetAgent.uid] }); } catch (err) { console.error(err); } setIsSearching(false); };
 
-  const startChat = async (otherUser) => {
-    const existingThread = threads.find(th => !th.isGroup && th.participants.includes(otherUser.uid));
-    if (existingThread) {
-      setActiveThreadId(existingThread.id);
-    } else {
-      const newThread = await addDoc(collection(db, 'chat_threads'), {
-        isGroup: false,
-        participants: [user.uid, otherUser.uid],
-        lastActivity: Date.now(),
-        typing: {}
-      });
-      setActiveThreadId(newThread.id);
-    }
+  const triggerChatEntry = (thread) => {
+    let keys = JSON.parse(localStorage.getItem('commslink_keys') || '{}')[thread.id];
+    if (keys) { 
+      if (typeof keys === 'string') keys = [keys]; 
+      setEncryptionKeys(keys); 
+      setActiveChat(thread); 
+      try { window.history.pushState({ chat: thread.id }, ''); } catch(e){} 
+    } 
+    else { setTargetThread(thread); setTempKey(''); setShowKeyModal(true); }
   };
+  const handleChangeKey = () => { setTargetThread(activeChat); setTempKey(''); setShowKeyModal(true); };
+  const confirmChatEntry = (e) => { e.preventDefault(); if (!tempKey.trim()) return; const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}'); let currentKeys = savedKeys[targetThread.id] || []; if (typeof currentKeys === 'string') currentKeys = [currentKeys]; if (!currentKeys.includes(tempKey.trim())) currentKeys.push(tempKey.trim()); savedKeys[targetThread.id] = currentKeys; localStorage.setItem('commslink_keys', JSON.stringify(savedKeys)); setEncryptionKeys(currentKeys); setActiveChat(targetThread); setShowKeyModal(false); try { window.history.pushState({ chat: targetThread.id }, ''); } catch(e){} };
 
-  if (loading) return <div className="h-[100dvh] bg-[#050508] flex items-center justify-center text-white"><Loader2 className="w-8 h-8 animate-spin text-cyan-500" /></div>;
+  const handleDeleteChat = async (threadId, isGroup) => { if(window.confirm(isGroup ? "Are you sure you want to leave this group?" : "Are you sure you want to delete this secure channel?")) { try { if (isGroup) { const groupRef = doc(db, 'chat_threads', threadId); const groupSnap = await getDoc(groupRef); const newParticipants = groupSnap.data().participants.filter(id => id !== user.uid); if (newParticipants.length === 0) await deleteDoc(groupRef); else await updateDoc(groupRef, { participants: newParticipants }); } else await deleteDoc(doc(db, 'chat_threads', threadId)); const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}'); delete savedKeys[threadId]; localStorage.setItem('commslink_keys', JSON.stringify(savedKeys)); if (activeChat?.id === threadId) window.history.back(); } catch (err) { alert("Action failed."); } } };
 
-  if (!user) return <AuthScreen t={t} />;
+  const globalStyles = `
+    @keyframes popIn { 0% { opacity: 0; transform: translateY(10px) scale(0.98); } 100% { opacity: 1; transform: translateY(0) scale(1); } } 
+    .animate-pop-in { animation: popIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } 
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } 
+    .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
+    @keyframes bouncySlideUp { 0% { transform: translateY(100%); opacity: 0; } 70% { transform: translateY(-5%); opacity: 1; } 100% { transform: translateY(0); opacity: 1; } }
+    .animate-bouncy-slide-up { animation: bouncySlideUp 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+    @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .animate-slide-up { animation: slideUp 0.2s ease-out forwards; }
+    @keyframes glitchIn { 0% { opacity: 0; transform: scale(0.9) translate3d(2px, 0, 0); filter: drop-shadow(-2px 0 red) drop-shadow(2px 0 cyan); } 20% { opacity: 0.8; transform: scale(1.02) translate3d(-2px, 0, 0); filter: drop-shadow(2px 0 red) drop-shadow(-2px 0 cyan); } 40% { opacity: 1; transform: scale(0.98) translate3d(2px, 0, 0); filter: drop-shadow(-1px 0 red) drop-shadow(1px 0 cyan); } 60% { opacity: 1; transform: scale(1) translate3d(0, 0, 0); filter: none; } 100% { opacity: 1; transform: scale(1); filter: none; } }
+    .animate-glitch-in { animation: glitchIn 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; }
+    .vanishing { animation: vanish 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards; pointer-events: none; }
+    @keyframes vanish { 0% { opacity: 1; transform: scale(1) translateY(0); max-height: 500px; margin-bottom: 1rem; } 40% { opacity: 0; transform: scale(0.95) translateY(-10px); max-height: 500px; margin-bottom: 1rem; } 100% { opacity: 0; transform: scale(0.95) translateY(-10px); max-height: 0; margin-bottom: 0; padding: 0; border: none; overflow: hidden; } }
+    .glass-picker { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    .custom-scrollbar::-webkit-scrollbar { width: 5px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+    .pb-safe { padding-bottom: env(safe-area-inset-bottom, 16px); }
+  `;
 
-  const activeChatData = threads.find(th => th.id === activeThreadId);
+  if (user === null) return <><style>{globalStyles}</style><AuthScreen t={t} /></>;
 
   return (
-    <div className="flex h-[100dvh] bg-[#050508] text-slate-200 overflow-hidden font-sans">
-      
-      {/* --- Sidebar / Agent List --- */}
-      <div className={`${activeThreadId ? 'hidden md:flex' : 'flex'} w-full md:w-80 flex-col border-r border-white/10 bg-[#0a0a0f]`}>
-        <div className="p-4 border-b border-white/10 flex items-center justify-between">
-          <h1 className={`text-xl font-mono font-bold ${t.title}`}>CommsLink</h1>
-          <div className="flex gap-2">
-            <select onChange={(e) => setThemeMode(e.target.value)} value={themeMode} className="bg-black/50 text-xs border border-white/10 rounded px-1 outline-none">
-              {Object.keys(themeStyles).map(key => <option key={key} value={key}>{themeStyles[key].name}</option>)}
-            </select>
-            <button onClick={() => signOut(auth)} className="p-2 text-slate-500 hover:text-red-500 rounded-lg transition-colors" title="Disconnect"><LogOut className="w-4 h-4" /></button>
+    <div className="flex h-[100dvh] w-full bg-[#050508] text-slate-200 overflow-hidden font-sans">
+      <style>{globalStyles}</style>
+
+      {showProfileModal && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-pop-in">
+            <div className="flex justify-between items-center mb-6"><h3 className={`text-xl font-bold ${t.text}`}>Agent Protocol</h3><button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button></div>
+            <div className="flex flex-col items-center mb-6">
+              <input type="file" accept="image/*" className="hidden" ref={avatarInputRef} onChange={handleAvatarChange} />
+              <div onClick={() => avatarInputRef.current?.click()} className={`relative w-24 h-24 rounded-full bg-gradient-to-br ${t.bgLight} border-2 ${t.border} flex items-center justify-center cursor-pointer group overflow-hidden shadow-lg`}>
+                {currentUserData?.avatarData ? <img src={currentUserData.avatarData} className="w-full h-full object-cover group-hover:opacity-50 transition-all" /> : <User className={`w-10 h-10 ${t.text} group-hover:opacity-50 transition-all`} />}
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"><Camera className="w-8 h-8 text-white drop-shadow-md" /></div>
+              </div>
+            </div>
+            <div className="text-center mb-6">
+              <p className="text-xs text-slate-400 uppercase tracking-widest mb-1">Your Agent ID</p>
+              <div onClick={copyAgentId} className={`inline-flex items-center gap-2 cursor-pointer font-mono text-lg font-bold bg-black/50 py-2 px-4 rounded-xl border ${copiedId ? 'border-green-500 text-green-400' : 'border-white/10 text-white'} hover:bg-white/5 transition-all shadow-inner`}>{currentUserData?.agentId} {copiedId ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4 opacity-50" />}</div>
+            </div>
+            <form onSubmit={handleUpdateProfile}>
+              <div className="flex flex-col gap-2 mb-6"><label className="text-xs font-semibold text-slate-400 uppercase">Display Name</label><input type="text" required value={editName} onChange={(e) => setEditName(e.target.value)} className={`w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-white/30 ${t.ring} focus:ring-1 text-center`} /></div>
+              <button type="submit" disabled={isSavingProfile} className={`w-full py-3 rounded-xl bg-gradient-to-r ${t.sendBtn} text-white font-bold text-sm shadow-lg flex justify-center items-center`}>{isSavingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save Profile"}</button>
+            </form>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
-          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 mb-2 mt-4">Active Agents</h2>
-          {usersList.filter(u => u.uid !== user.uid).map(u => {
-            const th = threads.find(t => !t.isGroup && t.participants.includes(u.uid));
-            const isTyping = th && Object.values(th.typing || {}).some(Boolean);
-            
-            return (
-              <div key={u.uid} onClick={() => startChat(u)} className={`p-3 mb-1 rounded-xl hover:bg-white/5 cursor-pointer flex items-center gap-3 transition-colors ${activeThreadId === th?.id ? 'bg-white/5' : ''}`}>
-                <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${t.bgLight} border border-white/10 flex items-center justify-center`}><User className={`w-5 h-5 ${t.text}`} /></div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-sm text-slate-200 truncate">{u.displayName}</div>
-                  <div className="text-[10px] text-slate-500 truncate flex items-center gap-1">
-                    {isTyping ? <span className={`${t.text} animate-pulse`}>Agent is typing...</span> : `ID: ${u.agentId}`}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+      )}
+
+      {showKeyModal && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1a1a24] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-pop-in">
+            <h3 className={`text-xl font-bold mb-1 ${t.text}`}>Update Key Ring</h3><p className="text-xs text-slate-400 mb-4">Add a new key or enter an existing one. Old keys are saved locally to decode chat history.</p>
+            <form onSubmit={confirmChatEntry}>
+              <input type="password" autoFocus required value={tempKey} onChange={(e) => setTempKey(e.target.value)} placeholder="Encryption Key" className={`w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 mb-4 outline-none focus:border-white/30 ${t.ring} focus:ring-1`} />
+              <div className="flex gap-2"><button type="button" onClick={() => setShowKeyModal(false)} className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 transition-all font-bold text-sm">Cancel</button><button type="submit" className={`flex-1 py-3 rounded-xl bg-gradient-to-r ${t.sendBtn} text-white font-bold text-sm shadow-lg`}>Update Key</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <div className={`${activeChat ? 'hidden md:flex' : 'flex'} w-full md:w-[350px] lg:w-[400px] flex-col border-r border-white/10 z-20 shrink-0 bg-[#0a0a0f]`}>
+        <header className="px-4 py-4 border-b border-white/10 shrink-0 flex justify-between items-center bg-[#0f0f14]">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setShowProfileModal(true)} className={`w-10 h-10 rounded-full bg-gradient-to-br ${t.bgLight} border ${t.border} flex items-center justify-center ${t.glow} hover:scale-105 transition-all overflow-hidden shadow-lg cursor-pointer shrink-0`}>{currentUserData?.avatarData ? <img src={currentUserData.avatarData} className="w-full h-full object-cover" /> : <Settings className={`w-5 h-5 ${t.text}`} />}</button>
+            <div className="flex flex-col"><h2 className={`font-mono text-lg font-bold ${t.title} truncate tracking-widest`}>CommsLink</h2></div>
+          </div>
+          <div className="flex gap-1 shrink-0"><button onClick={toggleTheme} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5"><Palette className="w-4 h-4" /></button><button onClick={handleLogout} className="p-2 text-red-400 hover:text-red-300 rounded-lg hover:bg-white/5"><LogOut className="w-4 h-4" /></button></div>
+        </header>
+
+        <div className="p-4 border-b border-white/5 shrink-0 bg-[#0c0c12]">
+          <div className="flex gap-1 mb-3 bg-black/40 p-1 rounded-lg border border-white/5"><button onClick={() => setConnectMode('agent')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${connectMode === 'agent' ? t.activeTab : 'text-slate-500 hover:text-slate-300'}`}>Agent Link</button><button onClick={() => setConnectMode('group')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${connectMode === 'group' ? t.activeTab : 'text-slate-500 hover:text-slate-300'}`}>Servers</button></div>
+          {connectMode === 'agent' ? (
+            <form onSubmit={handleSearchAndCreateChat} className="flex gap-2">
+              <div className="relative flex-1 group"><div className={`absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:${t.text}`}><Search className="w-3.5 h-3.5" /></div><input type="text" value={searchAgentId} onChange={(e) => setSearchAgentId(e.target.value)} placeholder="Enter Agent ID..." className={`w-full bg-black/50 border border-white/10 rounded-lg py-2 pl-9 pr-3 text-sm ${t.ring} focus:ring-1 outline-none transition-all`} /></div>
+              <button type="submit" disabled={isSearching || !searchAgentId.trim()} className={`bg-gradient-to-r ${t.sendBtn} text-white px-3 rounded-lg disabled:opacity-50 shrink-0`}><Plus className="w-4 h-4" /></button>
+            </form>
+          ) : (
+            <form onSubmit={handleGroupJoin} className="flex flex-col gap-2">
+              <div className="relative group flex items-center"><input type="text" value={groupNameInput} onChange={(e) => setGroupNameInput(e.target.value)} placeholder="Server Name..." className={`w-full bg-black/50 border border-white/10 rounded-lg py-2 pl-3 pr-8 text-sm ${t.ring} focus:ring-1 outline-none transition-all`} /><button type="button" onClick={generateRandomGroup} className="absolute right-2 p-1 text-slate-500 hover:text-white" title="Random Server"><RefreshCw className="w-3 h-3" /></button></div>
+              <button type="submit" disabled={isSearching || !groupNameInput.trim()} className={`w-full bg-gradient-to-r ${t.sendBtn} py-2 text-white text-sm font-bold rounded-lg disabled:opacity-50 shrink-0`}>Create / Join Server</button>
+            </form>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+          {chatThreads.length === 0 ? ( <div className="text-center p-8 mt-4 text-slate-500 opacity-50"><MessageSquare className="w-8 h-8 mx-auto mb-2" /><p className="text-xs">No active channels.</p></div> ) : (
+            chatThreads.map((thread) => {
+              const isGroup = thread.isGroup; let chatName = "Unknown"; let chatAvatar = null; let isOnline = false;
+              if (isGroup) chatName = thread.name || "Group Server";
+              else {
+                const otherUserId = thread.participants.find(id => id !== user.uid); const otherUserAgent = usersList.find(u => u.uid === otherUserId);
+                chatName = thread.customName || otherUserAgent?.displayName || thread.participantNames?.[otherUserId] || 'Unknown Agent'; 
+                chatAvatar = otherUserAgent?.avatarData || null;
+                if (otherUserAgent && otherUserAgent.lastSeen && Date.now() - otherUserAgent.lastSeen < 300000) isOnline = true;
+              }
+              const hasLocalKey = !!JSON.parse(localStorage.getItem('commslink_keys') || '{}')[thread.id]; const isActive = activeChat?.id === thread.id;
+              return (
+                <button key={thread.id} onClick={() => triggerChatEntry(thread)} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all group text-left ${isActive ? 'bg-white/10 border border-white/5' : 'bg-transparent hover:bg-white/5 border border-transparent'}`}>
+                  <div className={`w-11 h-11 rounded-full relative bg-black/50 border ${isActive ? t.border : 'border-white/10'} flex items-center justify-center shrink-0 overflow-hidden`}>{isGroup ? <Users className={`w-4 h-4 ${isActive ? t.text : 'text-slate-400'}`} /> : (chatAvatar ? <img src={chatAvatar} className="w-full h-full object-cover" /> : <User className={`w-4 h-4 ${isActive ? t.text : 'text-slate-400'}`} />)}{isOnline && !isGroup && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-[#0a0a0f] rounded-full shadow-[0_0_5px_rgba(34,197,94,0.5)]"></div>}</div>
+                  <div className="flex-1 overflow-hidden"><h4 className={`font-bold truncate text-sm ${isActive ? 'text-white' : 'text-slate-300'}`}>{chatName}</h4><p className={`text-[10px] truncate flex items-center gap-1 mt-0.5 ${hasLocalKey ? 'text-green-500/70' : 'text-amber-500/70'}`}>{hasLocalKey ? <Unlock className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />} {hasLocalKey ? 'Cached' : 'Locked'}</p></div>
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
 
-      {/* --- Main Chat Interface --- */}
-      {activeThreadId ? (
-        <ChatInterface 
-          user={user} 
-          usersList={usersList} 
-          threadId={activeThreadId} 
-          chatData={activeChatData} 
-          encryptionKeys={encryptionKeys} 
-          goBack={() => setActiveThreadId(null)} 
-          changeKey={() => {
-            const newKey = prompt('Update Master Encryption Key (Leave blank to cancel):');
-            if (newKey && newKey.trim()) setEncryptionKeys([...encryptionKeys, newKey.trim()]);
-          }} 
-          deleteChat={async (id) => {
-            if (confirm("Burn this channel? This cannot be undone.")) {
-               await deleteDoc(doc(db, 'chat_threads', id));
-               setActiveThreadId(null);
-            }
-          }} 
-          t={t} 
-          themeMode={themeMode} 
-        />
-      ) : (
-        <div className="hidden md:flex flex-1 flex-col items-center justify-center bg-[#050508] relative">
-          <ShieldCheck className={`w-20 h-20 mb-6 ${t.text} opacity-20`} />
-          <h2 className="text-xl font-mono text-slate-400 tracking-widest uppercase">Select an Agent to establish uplink</h2>
-          <div className={`mt-8 px-4 py-2 rounded-full border border-white/10 bg-black/40 text-[10px] text-slate-500 font-mono flex items-center gap-2`}><Lock className="w-3 h-3" /> End-to-End Encrypted</div>
-        </div>
-      )}
+      <div className={`${!activeChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col relative bg-[#050508] min-h-0`}>
+        {activeChat ? ( <ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={chatThreads.find(th => th.id === activeChat.id) || activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => { try { window.history.back(); } catch(e){ setActiveChat(null); } }} deleteChat={handleDeleteChat} t={t} themeMode={themeMode} /> ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-500/40 relative">
+             <div className="absolute inset-0 bg-center bg-no-repeat bg-contain opacity-5" style={{ backgroundImage: "url('data:image/svg+xml;utf8,<svg width=\"100\" height=\"100\" viewBox=\"0 0 100 100\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M50 20L80 40V70L50 90L20 70V40L50 20Z\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>')" }}></div>
+             <ShieldCheck className="w-24 h-24 mb-6 drop-shadow-2xl" /><h3 className="font-mono text-xl tracking-widest uppercase mb-2">CommsLink Standby</h3><p className="text-sm">Select a channel from the directory to establish uplink.</p>
+          </div>
+        )}
+      </div>
+
     </div>
   );
-};
-
-export default App;
+}
