@@ -96,7 +96,6 @@ const setupMaskedMedia = async (rawStream, useAudioMask) => {
 // --- Media Utils ---
 const createStickerFromImage = (b64) => new Promise((res, rej) => { const i = new Image(); i.src = b64; i.onload = () => { const c = document.createElement('canvas'); c.width = 256; c.height = 256; const ctx = c.getContext('2d'); const s = Math.min(i.width, i.height); ctx.drawImage(i, (i.width-s)/2, (i.height-s)/2, s, s, 0, 0, 256, 256); res(c.toDataURL('image/webp', 0.8)); }; i.onerror = rej; });
 const compressImage = (f) => new Promise((res, rej) => { const r = new FileReader(); r.readAsDataURL(f); r.onload = (e) => { const i = new Image(); i.src = e.target.result; i.onload = () => { const c = document.createElement('canvas'); let w = i.width, h = i.height; if(w>h){if(w>600){h*=600/w;w=600;}}else{if(h>600){w*=600/h;h=600;}} c.width=w; c.height=h; c.getContext('2d').drawImage(i,0,0,w,h); res(c.toDataURL('image/jpeg', 0.6)); }; i.onerror=rej; }; r.onerror=rej; });
-const compressAvatar = (f) => new Promise((res, rej) => { const r = new FileReader(); r.readAsDataURL(f); r.onload = (e) => { const i = new Image(); i.src = e.target.result; i.onload = () => { const c = document.createElement('canvas'); let w = i.width, h = i.height; if(w>h){h*=150/w;w=150;}else{w*=150/h;h=150;} c.width=w; c.height=h; c.getContext('2d').drawImage(i,0,0,w,h); res(c.toDataURL('image/jpeg', 0.6)); }; i.onerror=rej; }; r.onerror=rej; });
 const blobToBase64 = (b) => new Promise((res, rej) => { const r = new FileReader(); r.readAsDataURL(b); r.onloadend = () => res(r.result); r.onerror = rej; });
 const formatTime = (ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const formatDay = (ts) => { const d = new Date(ts), t = new Date(), y = new Date(t); y.setDate(y.getDate()-1); if(d.toDateString()===t.toDateString()) return 'Today'; if(d.toDateString()===y.toDateString()) return 'Yesterday'; return d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
@@ -255,7 +254,6 @@ const MessageItem = ({ msg, index, isMine, isGroup, isConsecutive, repliedMsg, h
   );
 };
 
-// --- 3. THE CHAT INTERFACE & WEBRTC LOGIC ---
 const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, goBack, changeKey, deleteChat, t, themeMode }) => {
   const [messages, setMessages] = useState([]);
   const [searchQuery, setSearchQuery] = useState(''); const [showSearch, setShowSearch] = useState(false);
@@ -915,3 +913,131 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     </div>
   );
 }
+
+// --- MAIN APP WRAPPER ---
+const App = () => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [themeMode, setThemeMode] = useState('cyberpunk');
+  const t = themeStyles[themeMode] || themeStyles.cyberpunk;
+  
+  const [activeThreadId, setActiveThreadId] = useState(null);
+  const [threads, setThreads] = useState([]);
+  const [usersList, setUsersList] = useState([]);
+  const [encryptionKeys, setEncryptionKeys] = useState(['default-commslink-key-123']);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    
+    // Listen to all agents
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
+      setUsersList(snap.docs.map(doc => doc.data()));
+    });
+    
+    // Listen to threads the user is in
+    const qThreads = query(collection(db, 'chat_threads'), where('participants', 'array-contains', user.uid));
+    const unsubThreads = onSnapshot(qThreads, (snap) => {
+      setThreads(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    return () => { unsubUsers(); unsubThreads(); };
+  }, [user]);
+
+  const startChat = async (otherUser) => {
+    const existingThread = threads.find(th => !th.isGroup && th.participants.includes(otherUser.uid));
+    if (existingThread) {
+      setActiveThreadId(existingThread.id);
+    } else {
+      const newThread = await addDoc(collection(db, 'chat_threads'), {
+        isGroup: false,
+        participants: [user.uid, otherUser.uid],
+        lastActivity: Date.now(),
+        typing: {}
+      });
+      setActiveThreadId(newThread.id);
+    }
+  };
+
+  if (loading) return <div className="h-[100dvh] bg-[#050508] flex items-center justify-center text-white"><Loader2 className="w-8 h-8 animate-spin text-cyan-500" /></div>;
+
+  if (!user) return <AuthScreen t={t} />;
+
+  const activeChatData = threads.find(th => th.id === activeThreadId);
+
+  return (
+    <div className="flex h-[100dvh] bg-[#050508] text-slate-200 overflow-hidden font-sans">
+      
+      {/* --- Sidebar / Agent List --- */}
+      <div className={`${activeThreadId ? 'hidden md:flex' : 'flex'} w-full md:w-80 flex-col border-r border-white/10 bg-[#0a0a0f]`}>
+        <div className="p-4 border-b border-white/10 flex items-center justify-between">
+          <h1 className={`text-xl font-mono font-bold ${t.title}`}>CommsLink</h1>
+          <div className="flex gap-2">
+            <select onChange={(e) => setThemeMode(e.target.value)} value={themeMode} className="bg-black/50 text-xs border border-white/10 rounded px-1 outline-none">
+              {Object.keys(themeStyles).map(key => <option key={key} value={key}>{themeStyles[key].name}</option>)}
+            </select>
+            <button onClick={() => signOut(auth)} className="p-2 text-slate-500 hover:text-red-500 rounded-lg transition-colors" title="Disconnect"><LogOut className="w-4 h-4" /></button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
+          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 mb-2 mt-4">Active Agents</h2>
+          {usersList.filter(u => u.uid !== user.uid).map(u => {
+            const th = threads.find(t => !t.isGroup && t.participants.includes(u.uid));
+            const isTyping = th && Object.values(th.typing || {}).some(Boolean);
+            
+            return (
+              <div key={u.uid} onClick={() => startChat(u)} className={`p-3 mb-1 rounded-xl hover:bg-white/5 cursor-pointer flex items-center gap-3 transition-colors ${activeThreadId === th?.id ? 'bg-white/5' : ''}`}>
+                <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${t.bgLight} border border-white/10 flex items-center justify-center`}><User className={`w-5 h-5 ${t.text}`} /></div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm text-slate-200 truncate">{u.displayName}</div>
+                  <div className="text-[10px] text-slate-500 truncate flex items-center gap-1">
+                    {isTyping ? <span className={`${t.text} animate-pulse`}>Agent is typing...</span> : `ID: ${u.agentId}`}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* --- Main Chat Interface --- */}
+      {activeThreadId ? (
+        <ChatInterface 
+          user={user} 
+          usersList={usersList} 
+          threadId={activeThreadId} 
+          chatData={activeChatData} 
+          encryptionKeys={encryptionKeys} 
+          goBack={() => setActiveThreadId(null)} 
+          changeKey={() => {
+            const newKey = prompt('Update Master Encryption Key (Leave blank to cancel):');
+            if (newKey && newKey.trim()) setEncryptionKeys([...encryptionKeys, newKey.trim()]);
+          }} 
+          deleteChat={async (id) => {
+            if (confirm("Burn this channel? This cannot be undone.")) {
+               await deleteDoc(doc(db, 'chat_threads', id));
+               setActiveThreadId(null);
+            }
+          }} 
+          t={t} 
+          themeMode={themeMode} 
+        />
+      ) : (
+        <div className="hidden md:flex flex-1 flex-col items-center justify-center bg-[#050508] relative">
+          <ShieldCheck className={`w-20 h-20 mb-6 ${t.text} opacity-20`} />
+          <h2 className="text-xl font-mono text-slate-400 tracking-widest uppercase">Select an Agent to establish uplink</h2>
+          <div className={`mt-8 px-4 py-2 rounded-full border border-white/10 bg-black/40 text-[10px] text-slate-500 font-mono flex items-center gap-2`}><Lock className="w-3 h-3" /> End-to-End Encrypted</div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default App;
