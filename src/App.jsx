@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, getDoc, deleteDoc, updateDoc, query, where, getDocs, arrayUnion, orderBy, limit } from 'firebase/firestore';
-import {
-  Lock, Unlock, Send, Key, MessageSquare, ShieldAlert,
-  ShieldCheck, LogOut, User, Loader2, Check, Users,
-  Palette, Reply, X, Smile, Mic, Square, Play, Pause,
-  ChevronLeft, Fingerprint, Search, Plus, Trash2, Settings,
+import { 
+  Lock, Unlock, Send, Key, MessageSquare, ShieldAlert, 
+  ShieldCheck, LogOut, User, Loader2, Check, Users, 
+  Palette, Reply, X, Smile, Mic, Square, Play, Pause, 
+  ChevronLeft, Fingerprint, Search, Plus, Trash2, Settings, 
   Camera, PenLine, RefreshCw, Copy, Paperclip, CheckCheck, Flame, Clock, ChevronDown, Image as ImageIcon,
   ArrowDown, Sticker, Edit2, Phone, PhoneCall, PhoneOff, MicOff, Volume2
 } from 'lucide-react';
@@ -58,9 +58,9 @@ const parseMarkdown = (text) => {
   let html = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
   html = html.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-400 underline hover:text-blue-300 break-all" onclick="event.stopPropagation()">$1</a>');
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/~(.*?)~/g, '<del>$1</del>')
-    .replace(/`(.*?)`/g, '<code class="bg-black/40 px-1.5 py-0.5 rounded text-cyan-400 font-mono text-[13px] border border-white/5 break-words">$1</code>');
+             .replace(/\*(.*?)\*/g, '<em>$1</em>')
+             .replace(/~(.*?)~/g, '<del>$1</del>')
+             .replace(/`(.*?)`/g, '<code class="bg-black/40 px-1.5 py-0.5 rounded text-cyan-400 font-mono text-[13px] border border-white/5 break-words">$1</code>');
   return { __html: html };
 };
 
@@ -83,12 +83,12 @@ const setupMaskedAudio = async (rawStream) => {
 };
 
 // --- Media Utils ---
-const createStickerFromImage = (b64) => new Promise((res, rej) => { const i = new Image(); i.src = b64; i.onload = () => { const c = document.createElement('canvas'); c.width = 256; c.height = 256; const ctx = c.getContext('2d'); const s = Math.min(i.width, i.height); ctx.drawImage(i, (i.width - s) / 2, (i.height - s) / 2, s, s, 0, 0, 256, 256); res(c.toDataURL('image/webp', 0.8)); }; i.onerror = rej; });
-const compressImage = (f) => new Promise((res, rej) => { const r = new FileReader(); r.readAsDataURL(f); r.onload = (e) => { const i = new Image(); i.src = e.target.result; i.onload = () => { const c = document.createElement('canvas'); let w = i.width, h = i.height; if (w > h) { if (w > 600) { h *= 600 / w; w = 600; } } else { if (h > 600) { w *= 600 / h; h = 600; } } c.width = w; c.height = h; c.getContext('2d').drawImage(i, 0, 0, w, h); res(c.toDataURL('image/jpeg', 0.6)); }; i.onerror = rej; }; r.onerror = rej; });
-const compressAvatar = (f) => new Promise((res, rej) => { const r = new FileReader(); r.readAsDataURL(f); r.onload = (e) => { const i = new Image(); i.src = e.target.result; i.onload = () => { const c = document.createElement('canvas'); let w = i.width, h = i.height; if (w > h) { h *= 150 / w; w = 150; } else { w *= 150 / h; h = 150; } c.width = w; c.height = h; c.getContext('2d').drawImage(i, 0, 0, w, h); res(c.toDataURL('image/jpeg', 0.6)); }; i.onerror = rej; }; r.onerror = rej; });
+const createStickerFromImage = (b64) => new Promise((res, rej) => { const i = new Image(); i.src = b64; i.onload = () => { const c = document.createElement('canvas'); c.width = 256; c.height = 256; const ctx = c.getContext('2d'); const s = Math.min(i.width, i.height); ctx.drawImage(i, (i.width-s)/2, (i.height-s)/2, s, s, 0, 0, 256, 256); res(c.toDataURL('image/webp', 0.8)); }; i.onerror = rej; });
+const compressImage = (f) => new Promise((res, rej) => { const r = new FileReader(); r.readAsDataURL(f); r.onload = (e) => { const i = new Image(); i.src = e.target.result; i.onload = () => { const c = document.createElement('canvas'); let w = i.width, h = i.height; if(w>h){if(w>600){h*=600/w;w=600;}}else{if(h>600){w*=600/h;h=600;}} c.width=w; c.height=h; c.getContext('2d').drawImage(i,0,0,w,h); res(c.toDataURL('image/jpeg', 0.6)); }; i.onerror=rej; }; r.onerror=rej; });
+const compressAvatar = (f) => new Promise((res, rej) => { const r = new FileReader(); r.readAsDataURL(f); r.onload = (e) => { const i = new Image(); i.src = e.target.result; i.onload = () => { const c = document.createElement('canvas'); let w = i.width, h = i.height; if(w>h){h*=150/w;w=150;}else{w*=150/h;h=150;} c.width=w; c.height=h; c.getContext('2d').drawImage(i,0,0,w,h); res(c.toDataURL('image/jpeg', 0.6)); }; i.onerror=rej; }; r.onerror=rej; });
 const blobToBase64 = (b) => new Promise((res, rej) => { const r = new FileReader(); r.readAsDataURL(b); r.onloadend = () => res(r.result); r.onerror = rej; });
 const formatTime = (ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-const formatDay = (ts) => { const d = new Date(ts), t = new Date(), y = new Date(t); y.setDate(y.getDate() - 1); if (d.toDateString() === t.toDateString()) return 'Today'; if (d.toDateString() === y.toDateString()) return 'Yesterday'; return d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
+const formatDay = (ts) => { const d = new Date(ts), t = new Date(), y = new Date(t); y.setDate(y.getDate()-1); if(d.toDateString()===t.toDateString()) return 'Today'; if(d.toDateString()===y.toDateString()) return 'Yesterday'; return d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
 const isSameDay = (ts1, ts2) => new Date(ts1).toDateString() === new Date(ts2).toDateString();
 
 // --- Sub-Components ---
@@ -114,7 +114,7 @@ const themeStyles = {
   oceanic: { name: 'Oceanic', text: 'text-teal-400', border: 'border-teal-500/30', ring: 'focus:ring-teal-400', bgLight: 'bg-teal-500/10', btnGrad: 'from-blue-700 to-teal-500 hover:from-blue-600 hover:to-teal-400', sendBtn: 'from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500', msgMine: 'from-teal-600/30 to-blue-600/20 border-teal-500/30 text-teal-50', glow: 'shadow-[0_0_15px_rgba(45,212,191,0.2)]', title: 'text-teal-400 drop-shadow-[0_0_10px_rgba(45,212,191,0.4)]', activeTab: 'bg-teal-500/20 border-teal-500/50 text-white' }
 };
 
-const REACTION_EMOJIS = ['👍', '❤️', '😂', '🔥', '🥺', '🎉', '💯', '🤔', '👀', '🙌', '👏', '🙏', '✨', '💀', '😭', '🤯', '😡', '🤢', '🤡', '👻', '👽', '🤖', '💩', '😎', '🤓', '🥳', '😴', '🙄', '🤐', '🤫', '🤬', '😈', '✌️', '🤘', '👌', '🤌', '💪', '🧠', '🖕', '🙂', '🫦', '🥵', '🥶', '🥴', '🧊', '🩸', '🧪', '📉'];
+const REACTION_EMOJIS = ['👍','❤️','😂','🔥','🥺','🎉','💯','🤔','👀','🙌','👏','🙏','✨','💀','😭','🤯','😡','🤢','🤡','👻','👽','🤖','💩','😎','🤓','🥳','😴','🙄','🤐','🤫','🤬','😈','✌️','🤘','👌','🤌','💪','🧠','🖕','🙂','🫦','🥵','🥶','🥴','🧊','🩸','🧪','📉'];
 
 const AuthScreen = ({ t }) => {
   const [isLogin, setIsLogin] = useState(true); const [agentId, setAgentId] = useState(''); const [displayName, setDisplayName] = useState(''); const [password, setPassword] = useState(''); const [loading, setLoading] = useState(false);
@@ -122,7 +122,7 @@ const AuthScreen = ({ t }) => {
     e.preventDefault(); const safeId = agentId.trim().toLowerCase().replace(/[^a-z0-9]/g, ''); if (safeId.length < 3) return alert("Agent ID must be at least 3 letters or numbers.");
     const phantomEmail = `${safeId}@commslink.network`; setLoading(true);
     try {
-      if (isLogin) { await signInWithEmailAndPassword(auth, phantomEmail, password); }
+      if (isLogin) { await signInWithEmailAndPassword(auth, phantomEmail, password); } 
       else {
         const userCred = await createUserWithEmailAndPassword(auth, phantomEmail, password);
         const finalName = displayName.trim() || agentId.trim(); await updateProfile(userCred.user, { displayName: finalName });
@@ -166,7 +166,7 @@ const MessageItem = ({ msg, index, isMine, isGroup, isConsecutive, repliedMsg, h
     <>
       {showDayDivider && (<div className="flex justify-center w-full my-4 z-0"><span className={`px-3 py-1 text-[10px] font-bold tracking-widest uppercase rounded-full bg-black/60 border ${t.border} ${t.text} shadow-md`}>{dayString}</span></div>)}
       <div className={`flex flex-col max-w-[85%] md:max-w-[70%] relative group ${isMine ? 'self-end items-end' : 'self-start items-start'} ${bubbleSpacing} animate-pop-in ${isExpiring ? 'vanishing' : ''} ${zIndexClass}`}
-        onTouchStart={e => { activeTouch.current.startX = e.targetTouches[0].clientX; activeTouch.current.isLongPress = false; activeTouch.current.timer = setTimeout(() => { activeTouch.current.isLongPress = true; if (navigator.vibrate) navigator.vibrate(40); setActiveMenu(msg.id); }, 450); }}
+        onTouchStart={e => { activeTouch.current.startX = e.targetTouches[0].clientX; activeTouch.current.isLongPress = false; activeTouch.current.timer = setTimeout(() => { activeTouch.current.isLongPress = true; if(navigator.vibrate) navigator.vibrate(40); setActiveMenu(msg.id); }, 450); }}
         onTouchMove={() => clearTimeout(activeTouch.current.timer)}
         onTouchEnd={e => { clearTimeout(activeTouch.current.timer); if (!activeTouch.current.isLongPress && e.changedTouches[0].clientX - activeTouch.current.startX > 60) setReplyingTo(msg); }}
       >
@@ -177,10 +177,10 @@ const MessageItem = ({ msg, index, isMine, isGroup, isConsecutive, repliedMsg, h
         {activeMenu === msg.id && (
           <div className={`absolute ${isMine ? 'right-0' : 'left-0'} ${index < 3 ? 'top-full mt-2' : 'bottom-full mb-2'} bg-[#1a1a24]/95 border border-white/10 rounded-2xl p-3 z-[300] w-[270px] shadow-2xl glass-picker animate-pop-in`} onClick={e => e.stopPropagation()}>
             <div className="flex justify-around mb-3 border-b border-white/10 pb-2">
-              <button onClick={() => { setReplyingTo(msg); setActiveMenu(null); }} className="p-2 hover:bg-white/10 rounded-lg text-slate-300"><Reply className="w-4 h-4" /></button>
-              {msg.isDecrypted && msg.type === 'image' && (<button onClick={() => { saveSticker(msg.decryptedText); setActiveMenu(null); }} className="p-2 hover:bg-white/10 rounded-lg text-orange-400"><Sticker className="w-4 h-4" /></button>)}
-              {isMine && msg.type === 'text' && (<button onClick={() => { startEditing(msg); setActiveMenu(null); }} className="p-2 hover:bg-white/10 rounded-lg text-blue-400"><Edit2 className="w-4 h-4" /></button>)}
-              {isMine && (<button onClick={() => { deleteMessage(msg.id); setActiveMenu(null); }} className="p-2 hover:bg-red-500/20 rounded-lg text-red-400"><Trash2 className="w-4 h-4" /></button>)}
+              <button onClick={() => { setReplyingTo(msg); setActiveMenu(null); }} className="p-2 hover:bg-white/10 rounded-lg text-slate-300"><Reply className="w-4 h-4"/></button>
+              {msg.isDecrypted && msg.type === 'image' && (<button onClick={() => { saveSticker(msg.decryptedText); setActiveMenu(null); }} className="p-2 hover:bg-white/10 rounded-lg text-orange-400"><Sticker className="w-4 h-4"/></button>)}
+              {isMine && msg.type === 'text' && (<button onClick={() => { startEditing(msg); setActiveMenu(null); }} className="p-2 hover:bg-white/10 rounded-lg text-blue-400"><Edit2 className="w-4 h-4"/></button>)}
+              {isMine && (<button onClick={() => { deleteMessage(msg.id); setActiveMenu(null); }} className="p-2 hover:bg-red-500/20 rounded-lg text-red-400"><Trash2 className="w-4 h-4"/></button>)}
             </div>
             <div className="grid grid-cols-6 gap-1 max-h-32 overflow-y-auto custom-scrollbar">
               {REACTION_EMOJIS.map(emoji => (<button key={emoji} onClick={() => toggleReaction(msg.id, msg.reactions || {}, emoji)} className="w-9 h-9 hover:bg-white/10 rounded-lg text-xl hover:scale-110">{emoji}</button>))}
@@ -191,18 +191,18 @@ const MessageItem = ({ msg, index, isMine, isGroup, isConsecutive, repliedMsg, h
         {!isConsecutive && !isSticker && (
           <div className="flex items-center gap-2 mb-1">
             {!isMine && isGroup && <span className="text-[10px] text-slate-500 ml-1">{msg.senderName}</span>}
-            {msg.expiresAt && <span className="text-[10px] text-orange-400 flex items-center gap-0.5"><Flame className="w-3 h-3" /> Burns soon</span>}
+            {msg.expiresAt && <span className="text-[10px] text-orange-400 flex items-center gap-0.5"><Flame className="w-3 h-3"/> Burns soon</span>}
           </div>
         )}
 
         {isSticker && msg.isDecrypted ? (
-          <div className="relative group cursor-pointer" onClick={() => setZoomedImage(msg.decryptedText)}>
-            <img src={msg.decryptedText} className="w-32 h-32 md:w-40 md:h-40 object-contain drop-shadow-[0_5px_15px_rgba(0,0,0,0.5)] transition-transform hover:scale-105" alt="Sticker" />
-            <div className={`absolute -bottom-2 -right-2 bg-black/60 rounded-full px-1.5 py-0.5 flex items-center gap-1 text-[9px] opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm border border-white/10`}>
-              <span className="text-slate-300">{msgTime}</span>
-              {isMine && !isGroup && (isRead ? <CheckCheck className="w-3 h-3 text-cyan-400" /> : <Check className="w-3 h-3 text-slate-400" />)}
-            </div>
-          </div>
+           <div className="relative group cursor-pointer" onClick={() => setZoomedImage(msg.decryptedText)}>
+              <img src={msg.decryptedText} className="w-32 h-32 md:w-40 md:h-40 object-contain drop-shadow-[0_5px_15px_rgba(0,0,0,0.5)] transition-transform hover:scale-105" alt="Sticker" />
+              <div className={`absolute -bottom-2 -right-2 bg-black/60 rounded-full px-1.5 py-0.5 flex items-center gap-1 text-[9px] opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm border border-white/10`}>
+                <span className="text-slate-300">{msgTime}</span>
+                {isMine && !isGroup && (isRead ? <CheckCheck className="w-3 h-3 text-cyan-400" /> : <Check className="w-3 h-3 text-slate-400" />)}
+              </div>
+           </div>
         ) : (
           <div className={`p-1.5 shadow-lg relative max-w-full w-full ${borderRadius} ${msg.isDecrypted ? isMine ? `bg-gradient-to-br ${msg.expiresAt ? 'from-orange-600/30 to-red-600/20 border-orange-500/30 text-orange-50' : t.msgMine} border` : 'bg-[#1a1a24] border border-white/10 text-slate-200' : 'bg-red-900/20 border border-red-500/30 text-red-300'}`}>
             {repliedMsg && repliedMsg.isDecrypted && (
@@ -211,24 +211,24 @@ const MessageItem = ({ msg, index, isMine, isGroup, isConsecutive, repliedMsg, h
                 <span className="truncate block max-w-[200px] mt-0.5">{repliedMsg.type === 'text' ? repliedMsg.decryptedText : `📷 Media`}</span>
               </div>
             )}
-
+            
             {msg.isDecrypted ? (
-              msg.type === 'image' ? (<img src={msg.decryptedText} onClick={() => setZoomedImage(msg.decryptedText)} className="max-w-full rounded-xl cursor-zoom-in border border-white/5 object-contain" style={{ maxHeight: '350px' }} />) :
-                msg.type === 'video' ? (<video controls src={msg.decryptedText} className="max-w-full rounded-xl shadow-md border border-white/10 object-contain" style={{ maxHeight: '350px' }} />) :
-                  msg.type === 'video_loading' ? (<div className="px-4 py-3 flex flex-col gap-2 min-w-[200px]"><div className={`flex items-center gap-2 font-bold mb-1 border-b border-white/10 pb-2 text-xs ${t.text}`}><Loader2 className="w-3.5 h-3.5 animate-spin" /> ASSEMBLING...</div><div className="w-full bg-black/50 h-1.5 rounded-full overflow-hidden"><div className={`h-full bg-gradient-to-r ${t.sendBtn} transition-all`} style={{ width: `${(msg.progress / msg.total) * 100}%` }}></div></div><span className="opacity-50 text-[10px] text-right">Packets: {msg.progress} / {msg.total}</span></div>) :
-                    msg.type === 'audio' ? (<CustomAudioPlayer src={msg.decryptedText} t={t} />) :
-                      (
-                        <div className="px-3 py-2 text-[15px] whitespace-pre-wrap break-words overflow-wrap-anywhere leading-relaxed">
-                          <div dangerouslySetInnerHTML={parseMarkdown(msg.decryptedText)}></div>
-                          {ytIds.length > 0 && ytIds.map(id => (
-                            <div key={id} className="mt-3 w-full rounded-xl overflow-hidden border border-white/10 bg-black/50 aspect-video">
-                              <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${id}`} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
-                            </div>
-                          ))}
-                        </div>
-                      )
-            ) : (<div className="px-4 py-3 text-xs opacity-50"><Lock className="w-3.5 h-3.5 inline mr-1" /> BLOCKED/INVALID KEY</div>)}
-
+              msg.type === 'image' ? ( <img src={msg.decryptedText} onClick={() => setZoomedImage(msg.decryptedText)} className="max-w-full rounded-xl cursor-zoom-in border border-white/5 object-contain" style={{maxHeight:'350px'}} /> ) : 
+              msg.type === 'video' ? ( <video controls src={msg.decryptedText} className="max-w-full rounded-xl shadow-md border border-white/10 object-contain" style={{maxHeight:'350px'}} /> ) : 
+              msg.type === 'video_loading' ? ( <div className="px-4 py-3 flex flex-col gap-2 min-w-[200px]"><div className={`flex items-center gap-2 font-bold mb-1 border-b border-white/10 pb-2 text-xs ${t.text}`}><Loader2 className="w-3.5 h-3.5 animate-spin" /> ASSEMBLING...</div><div className="w-full bg-black/50 h-1.5 rounded-full overflow-hidden"><div className={`h-full bg-gradient-to-r ${t.sendBtn} transition-all`} style={{width: `${(msg.progress/msg.total)*100}%`}}></div></div><span className="opacity-50 text-[10px] text-right">Packets: {msg.progress} / {msg.total}</span></div> ) : 
+              msg.type === 'audio' ? ( <CustomAudioPlayer src={msg.decryptedText} t={t} /> ) : 
+              (
+                <div className="px-3 py-2 text-[15px] whitespace-pre-wrap break-words overflow-wrap-anywhere leading-relaxed">
+                   <div dangerouslySetInnerHTML={parseMarkdown(msg.decryptedText)}></div>
+                   {ytIds.length > 0 && ytIds.map(id => (
+                     <div key={id} className="mt-3 w-full rounded-xl overflow-hidden border border-white/10 bg-black/50 aspect-video">
+                       <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${id}`} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
+                     </div>
+                   ))}
+                </div>
+              )
+            ) : ( <div className="px-4 py-3 text-xs opacity-50"><Lock className="w-3.5 h-3.5 inline mr-1"/> BLOCKED/INVALID KEY</div> )}
+          
             <div className={`flex items-center justify-end gap-1 mt-1 px-1 opacity-70`}>
               <span className="text-[9px] font-mono tracking-wider text-slate-300">{msgTime} {msg.isEdited && <span className="italic opacity-60 ml-0.5">(edited)</span>}</span>
               {isMine && !isGroup && (isRead ? <CheckCheck className="w-3.5 h-3.5 text-cyan-400" /> : <Check className="w-3.5 h-3.5 text-slate-400" />)}
@@ -255,7 +255,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const [isEditingName, setIsEditingName] = useState(false); const [newChatName, setNewChatName] = useState('');
   const [isDragging, setIsDragging] = useState(false); const dragCounter = useRef(0);
   const [msgLimit, setMsgLimit] = useState(30);
-  const isTypingLocal = useRef(false); const typingTimeoutRef = useRef(null); const decryptionCache = useRef({});
+  const isTypingLocal = useRef(false); const typingTimeoutRef = useRef(null); const decryptionCache = useRef({}); 
   const [showBurnModal, setShowBurnModal] = useState(false); const [burnText, setBurnText] = useState(''); const [burnFile, setBurnFile] = useState(null); const [burnDuration, setBurnDuration] = useState(300000); const [isTimeDropdownOpen, setIsTimeDropdownOpen] = useState(false); const burnFileInputRef = useRef(null);
   const [showStickerPicker, setShowStickerPicker] = useState(false); const [savedStickers, setSavedStickers] = useState(() => JSON.parse(localStorage.getItem('commslink_stickers') || '[]'));
   const [showScrollButton, setShowScrollButton] = useState(false); const [unreadCount, setUnreadCount] = useState(0);
@@ -272,24 +272,22 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const remoteAudioRef = useRef(null);
   const audioContextRef = useRef(null);
   const callDurationTimer = useRef(null);
-  // Use a ref to track callState inside effects to avoid stale closures
-  const callStateRef = useRef('idle');
 
   const isGroup = chatData?.isGroup;
   let chatName = "Unknown Channel"; let chatAvatar = null; let memberCount = chatData?.participants?.length || 0;
-
+  
   // FIXED: Safe participant checks
   const otherUserId = isGroup ? null : chatData?.participants?.find(id => id !== user.uid);
   let someoneIsTyping = false; let typingName = '';
-
+  
   if (chatData?.typing) { const typists = Object.keys(chatData.typing).filter(id => id !== user.uid && chatData.typing[id]); if (typists.length > 0) { someoneIsTyping = true; const typistObj = usersList.find(u => u.uid === typists[0]); typingName = typistObj ? typistObj.displayName : 'Agent'; } }
-
-  if (isGroup) {
-    chatName = chatData?.name || "Group Server";
-  } else {
-    const otherUserAgent = usersList.find(u => u.uid === otherUserId);
-    chatName = chatData?.customName || otherUserAgent?.displayName || chatData?.participantNames?.[otherUserId] || 'Unknown Agent';
-    chatAvatar = otherUserAgent?.avatarData || null;
+  
+  if (isGroup) { 
+    chatName = chatData?.name || "Group Server"; 
+  } else { 
+    const otherUserAgent = usersList.find(u => u.uid === otherUserId); 
+    chatName = chatData?.customName || otherUserAgent?.displayName || chatData?.participantNames?.[otherUserId] || 'Unknown Agent'; 
+    chatAvatar = otherUserAgent?.avatarData || null; 
   }
 
   // PUBLIC TURN/STUN SERVERS
@@ -303,51 +301,26 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   useEffect(() => { setMsgLimit(30); setEditingMsg(null); setReplyingTo(null); setInputText(''); }, [threadId]);
   useEffect(() => { decryptionCache.current = {}; }, [encryptionKeys]);
 
-  // Keep ref in sync with state so effects always see the latest value
-  useEffect(() => { callStateRef.current = callState; }, [callState]);
-
-  // --- WebRTC Helper Functions (defined before effects that use them) ---
-  const startCallTimer = () => { setCallDuration(0); callDurationTimer.current = setInterval(() => setCallDuration(prev => prev + 1), 1000); };
-
-  const endCallLocally = () => {
-    if (peerConnection.current) { peerConnection.current.close(); peerConnection.current = null; }
-    if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(track => track.stop()); localStreamRef.current = null; }
-    if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
-    clearInterval(callDurationTimer.current); setCallDuration(0); setIsMuted(false); setCallState('idle');
-  };
-
-  const initiateCallPrompt = () => setCallState('prompting');
-
   // --- WebRTC Signaling Listener ---
-  // NOTE: callState is intentionally NOT in deps – we read it via callStateRef to avoid
-  // resubscribing the snapshot listener on every state change.
   useEffect(() => {
     if (isGroup) return;
     const callDocRef = doc(db, 'chat_threads', threadId, 'call_signal', 'data');
     const unsubscribe = onSnapshot(callDocRef, async (snapshot) => {
       const data = snapshot.data();
       if (!data) return;
-      const cs = callStateRef.current;
 
-      if (data.status === 'ringing' && data.callerId !== user.uid && cs === 'idle') {
+      if (data.status === 'ringing' && data.callerId !== user.uid && callState === 'idle') {
         setCallState('ringing');
       } else if (data.status === 'answered' && data.callerId === user.uid && peerConnection.current) {
         const remoteDesc = new RTCSessionDescription(data.answer);
         await peerConnection.current.setRemoteDescription(remoteDesc);
-        setCallState('connected');
-        setCallDuration(0);
-        callDurationTimer.current = setInterval(() => setCallDuration(prev => prev + 1), 1000);
-      } else if (data.status === 'ended' && cs !== 'idle') {
-        // Inline endCallLocally to avoid stale ref issues
-        if (peerConnection.current) { peerConnection.current.close(); peerConnection.current = null; }
-        if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(track => track.stop()); localStreamRef.current = null; }
-        if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
-        clearInterval(callDurationTimer.current); setCallDuration(0); setIsMuted(false); setCallState('idle');
+        setCallState('connected'); startCallTimer();
+      } else if (data.status === 'ended' && callState !== 'idle') {
+        endCallLocally();
       }
     });
     return () => unsubscribe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, user.uid, isGroup]);
+  }, [threadId, user.uid, callState, isGroup]);
 
   // --- WebRTC ICE Candidate Listener ---
   useEffect(() => {
@@ -359,7 +332,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           const data = change.doc.data();
           if (data.senderId !== user.uid) {
             const candidate = new RTCIceCandidate(data.candidate);
-            peerConnection.current?.addIceCandidate(candidate).catch(e => console.error(e));
+            peerConnection.current.addIceCandidate(candidate).catch(e => console.error(e));
           }
         }
       });
@@ -368,50 +341,22 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   }, [threadId, user.uid, callState]);
 
   const startCall = async (useMask) => {
-    setIsMasked(useMask);
-
-    // Guard: getUserMedia requires a secure context (https or localhost)
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      alert("Voice calls require a secure connection (HTTPS). Please ensure the app is served over HTTPS.");
-      setCallState('idle');
-      return;
-    }
-
-    // Step 1: Request mic access FIRST before changing any call state
-    let rawStream;
-    try {
-      rawStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    } catch (err) {
-      console.error('[WebRTC] getUserMedia failed:', err.name, err.message);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        alert("Microphone access was denied. Please allow microphone access in your browser's site settings and try again.");
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        alert("No microphone found. Please connect a microphone and try again.");
-      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        alert("Your microphone is already in use by another app. Please close other apps using the mic and try again.");
-      } else {
-        alert("Could not access microphone: " + (err.message || err.name));
-      }
-      setCallState('idle');
-      return;
-    }
-
-    // Step 2: Mic is available — now set up WebRTC and change call state
-    setCallState('calling');
+    setIsMasked(useMask); setCallState('calling');
     peerConnection.current = new RTCPeerConnection(iceServers);
-
+    
     peerConnection.current.onicecandidate = (event) => {
       if (event.candidate) addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { senderId: user.uid, candidate: event.candidate.toJSON() });
     };
 
     peerConnection.current.ontrack = (event) => {
-      if (remoteAudioRef.current) { remoteAudioRef.current.srcObject = event.streams[0]; remoteAudioRef.current.play().catch(e => console.warn('[WebRTC] Remote audio play error:', e)); }
+      if (remoteAudioRef.current) { remoteAudioRef.current.srcObject = event.streams[0]; remoteAudioRef.current.play(); }
     };
 
     try {
+      const rawStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (useMask) {
         const { processedStream, audioCtx } = await setupMaskedAudio(rawStream);
-        audioContextRef.current = audioCtx; localStreamRef.current = rawStream;
+        audioContextRef.current = audioCtx; localStreamRef.current = rawStream; 
         processedStream.getTracks().forEach(track => peerConnection.current.addTrack(track, processedStream));
       } else {
         localStreamRef.current = rawStream;
@@ -421,60 +366,33 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       const offer = await peerConnection.current.createOffer();
       await peerConnection.current.setLocalDescription(offer);
 
+      await setDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'ringing', callerId: user.uid, offer: { type: offer.type, sdp: offer.sdp }, isMasked: useMask, timestamp: Date.now() });
       const oldCandidates = await getDocs(collection(db, 'chat_threads', threadId, 'call_candidates'));
       oldCandidates.forEach(c => deleteDoc(c.ref));
-      await setDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'ringing', callerId: user.uid, offer: { type: offer.type, sdp: offer.sdp }, isMasked: useMask, timestamp: Date.now() });
 
-    } catch (err) {
-      console.error('[WebRTC] Call setup failed:', err);
-      alert("Failed to establish call: " + (err.message || err.name));
-      endCallLocally();
+    } catch (err) { 
+      console.error("Call Setup Error:", err);
+      alert(`Failed to start call: ${err.message}`); 
+      endCallLocally(); 
     }
   };
 
   const answerCall = async () => {
-    // Guard: getUserMedia requires a secure context (https or localhost)
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      alert("Voice calls require a secure connection (HTTPS). Please ensure the app is served over HTTPS.");
-      endCallLocally();
-      return;
-    }
-
-    // Step 1: Request mic access FIRST before any WebRTC setup
-    let rawStream;
-    try {
-      rawStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    } catch (err) {
-      console.error('[WebRTC] getUserMedia failed on answer:', err.name, err.message);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        alert("Microphone access was denied. Please allow microphone access in your browser's site settings and try again.");
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        alert("No microphone found. Please connect a microphone and try again.");
-      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        alert("Your microphone is already in use by another app. Please close other apps using the mic and try again.");
-      } else {
-        alert("Could not access microphone: " + (err.message || err.name));
-      }
-      endCallLocally();
-      return;
-    }
-
-    // Step 2: Mic is available — set up the peer connection
     peerConnection.current = new RTCPeerConnection(iceServers);
     peerConnection.current.onicecandidate = (event) => {
       if (event.candidate) addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { senderId: user.uid, candidate: event.candidate.toJSON() });
     };
     peerConnection.current.ontrack = (event) => {
-      if (remoteAudioRef.current) { remoteAudioRef.current.srcObject = event.streams[0]; remoteAudioRef.current.play().catch(e => console.warn('[WebRTC] Remote audio play error:', e)); }
+      if (remoteAudioRef.current) { remoteAudioRef.current.srcObject = event.streams[0]; remoteAudioRef.current.play(); }
     };
 
     try {
+      const rawStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = rawStream;
       rawStream.getTracks().forEach(track => peerConnection.current.addTrack(track, rawStream));
 
       const callDoc = await getDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'));
       const callData = callDoc.data();
-      if (!callData || !callData.offer) { throw new Error('Call signal data missing or invalid.'); }
 
       await peerConnection.current.setRemoteDescription(new RTCSessionDescription(callData.offer));
       const answer = await peerConnection.current.createAnswer();
@@ -482,10 +400,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
       await updateDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'answered', answer: { type: answer.type, sdp: answer.sdp } });
       setCallState('connected'); startCallTimer();
-    } catch (err) {
-      console.error('[WebRTC] Answer setup failed:', err);
-      alert("Failed to answer call: " + (err.message || err.name));
-      endCallLocally();
+    } catch (err) { 
+      console.error("Answer Call Error:", err);
+      alert(`Failed to answer: ${err.message}`); 
+      endCallLocally(); 
     }
   };
 
@@ -494,6 +412,16 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     endCallLocally();
   };
 
+  const endCallLocally = () => {
+    if (peerConnection.current) { peerConnection.current.close(); peerConnection.current = null; }
+    if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(track => track.stop()); localStreamRef.current = null; }
+    if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
+    clearInterval(callDurationTimer.current); setCallDuration(0); setIsMuted(false); setCallState('idle');
+  };
+
+  const initiateCallPrompt = () => { setCallState('prompting'); };
+
+  const startCallTimer = () => { setCallDuration(0); callDurationTimer.current = setInterval(() => setCallDuration(prev => prev + 1), 1000); };
   const formatCallTime = (seconds) => { const m = Math.floor(seconds / 60); const s = seconds % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; };
 
   const toggleMute = () => {
@@ -505,8 +433,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   // --- Message Fetching & Chat Logic ---
   useEffect(() => {
-    if (threadId && user && messages.length > 0 && !showScrollButton) updateDoc(doc(db, 'chat_threads', threadId), { [`lastRead.${user.uid}`]: Date.now() }).catch(() => { });
-  }, [threadId, user, messages.length, showScrollButton]);
+    if (threadId && user && messages.length > 0 && !showScrollButton) updateDoc(doc(db, 'chat_threads', threadId), { [`lastRead.${user.uid}`]: Date.now() }).catch(()=>{});
+  }, [threadId, user, messages.length, showScrollButton]); 
 
   useEffect(() => {
     if (messages.length > prevMsgCount.current) {
@@ -520,7 +448,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     const { scrollTop, scrollHeight, clientHeight } = e.target;
     const isScrolledUp = scrollHeight - scrollTop - clientHeight > 100;
     setShowScrollButton(isScrolledUp);
-    if (!isScrolledUp) { setUnreadCount(0); if (messages.length > 0) updateDoc(doc(db, 'chat_threads', threadId), { [`lastRead.${user.uid}`]: Date.now() }).catch(() => { }); }
+    if (!isScrolledUp) { setUnreadCount(0); if (messages.length > 0) updateDoc(doc(db, 'chat_threads', threadId), { [`lastRead.${user.uid}`]: Date.now() }).catch(()=>{}); }
     if (scrollTop === 0) setMsgLimit(prevLimit => prevLimit + 30);
   };
 
@@ -531,9 +459,9 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       let raw = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       const now = Date.now(); const validRaw = [];
-      raw.forEach(msg => { if (msg.expiresAt && msg.expiresAt <= now) deleteDoc(doc(db, 'chat_threads', threadId, 'messages', msg.id)).catch(() => { }); else validRaw.push(msg); });
+      raw.forEach(msg => { if (msg.expiresAt && msg.expiresAt <= now) deleteDoc(doc(db, 'chat_threads', threadId, 'messages', msg.id)).catch(()=>{}); else validRaw.push(msg); });
       validRaw.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-
+      
       const videoGroups = {}; const normalMessages = [];
       validRaw.forEach(msg => { if (msg.type === 'video_chunk') { if (!videoGroups[msg.videoGroupId]) videoGroups[msg.videoGroupId] = []; videoGroups[msg.videoGroupId].push(msg); } else normalMessages.push(msg); });
 
@@ -548,7 +476,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       }
 
       const combinedRaw = [...normalMessages, ...assembledVideos].sort((a, b) => a.timestamp - b.timestamp);
-
+      
       const processed = await Promise.all(combinedRaw.map(async (msg) => {
         if (msg.type === 'video_loading') return { ...msg, isDecrypted: true };
         if (decryptionCache.current[msg.id] && msg.isEdited && decryptionCache.current[`${msg.id}_edited`] !== msg.text) delete decryptionCache.current[msg.id];
@@ -556,7 +484,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
         let decrypted = null;
         for (const k of encryptionKeys) { decrypted = await decryptText(msg.text, k); if (decrypted !== null) break; }
-        if (decrypted !== null) { decryptionCache.current[msg.id] = decrypted; if (msg.isEdited) decryptionCache.current[`${msg.id}_edited`] = msg.text; }
+        if (decrypted !== null) { decryptionCache.current[msg.id] = decrypted; if(msg.isEdited) decryptionCache.current[`${msg.id}_edited`] = msg.text; }
         return { ...msg, decryptedText: decrypted, isDecrypted: decrypted !== null };
       }));
       setMessages(processed);
@@ -566,9 +494,9 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
   const handleTypingChange = (e) => {
     setInputText(e.target.value);
-    if (!isTypingLocal.current && e.target.value.trim() !== '') { isTypingLocal.current = true; updateDoc(doc(db, 'chat_threads', threadId), { [`typing.${user.uid}`]: true }).catch(() => { }); }
+    if (!isTypingLocal.current && e.target.value.trim() !== '') { isTypingLocal.current = true; updateDoc(doc(db, 'chat_threads', threadId), { [`typing.${user.uid}`]: true }).catch(()=>{}); }
     clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => { isTypingLocal.current = false; updateDoc(doc(db, 'chat_threads', threadId), { [`typing.${user.uid}`]: false }).catch(() => { }); }, 2000);
+    typingTimeoutRef.current = setTimeout(() => { isTypingLocal.current = false; updateDoc(doc(db, 'chat_threads', threadId), { [`typing.${user.uid}`]: false }).catch(()=>{}); }, 2000);
   };
 
   const handleRenameChat = async (e) => { e.preventDefault(); if (!newChatName.trim()) { setIsEditingName(false); return; } try { await updateDoc(doc(db, 'chat_threads', threadId), { [isGroup ? 'name' : 'customName']: newChatName.trim() }); setIsEditingName(false); } catch (err) { alert("Failed to rename channel."); } };
@@ -579,19 +507,19 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     const activeKey = encryptionKeys[encryptionKeys.length - 1];
 
     clearTimeout(typingTimeoutRef.current);
-    if (isTypingLocal.current) { isTypingLocal.current = false; updateDoc(doc(db, 'chat_threads', threadId), { [`typing.${user.uid}`]: false }).catch(() => { }); }
+    if (isTypingLocal.current) { isTypingLocal.current = false; updateDoc(doc(db, 'chat_threads', threadId), { [`typing.${user.uid}`]: false }).catch(()=>{}); }
 
     try {
       const enc = await encryptText(txt, activeKey);
-      if (editingMsg) { await updateDoc(doc(db, 'chat_threads', threadId, 'messages', editingMsg.id), { text: enc, isEdited: true }); setEditingMsg(null); }
+      if (editingMsg) { await updateDoc(doc(db, 'chat_threads', threadId, 'messages', editingMsg.id), { text: enc, isEdited: true }); setEditingMsg(null); } 
       else { await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: enc, type: 'text', timestamp: Date.now(), replyToId: replyId, reactions: {}, expiresAt: null, isEdited: false }); }
-      await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() }); await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() });
-      if (!editingMsg) scrollToBottom();
+      await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() }); await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() }); 
+      if(!editingMsg) scrollToBottom();
     } catch (err) { console.error(err); }
   };
 
   const startEditing = (msg) => { setEditingMsg(msg); setReplyingTo(null); setInputText(msg.decryptedText); if (fileInputRef.current) fileInputRef.current.value = ''; };
-  const deleteMessage = async (msgId) => { try { await deleteDoc(doc(db, 'chat_threads', threadId, 'messages', msgId)); } catch (err) { alert("Failed to delete message."); } };
+  const deleteMessage = async (msgId) => { try { await deleteDoc(doc(db, 'chat_threads', threadId, 'messages', msgId)); } catch(err) { alert("Failed to delete message."); } };
 
   const handleSendSticker = async (webpBase64) => {
     setShowStickerPicker(false); const activeKey = encryptionKeys[encryptionKeys.length - 1];
@@ -611,7 +539,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         if (file.size > 15 * 1024 * 1024) { alert("Max size is 15MB."); setIsUploading(false); return; }
         setUploadText("Shredding..."); const base64Vid = await blobToBase64(file); setUploadText("Encrypting..."); const encVid = await encryptText(base64Vid, activeKey);
         const CHUNK_SIZE = 700000; const totalChunks = Math.ceil(encVid.length / CHUNK_SIZE); const videoGroupId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
-        for (let i = 0; i < totalChunks; i++) { setUploadText(`Packet ${i + 1}/${totalChunks}...`); const chunkText = encVid.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE); await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, type: 'video_chunk', videoGroupId, chunkIndex: i, totalChunks, text: chunkText, timestamp: Date.now() + i, replyToId: replyId, reactions: {}, expiresAt: expiryTimestamp }); }
+        for (let i = 0; i < totalChunks; i++) { setUploadText(`Packet ${i+1}/${totalChunks}...`); const chunkText = encVid.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE); await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, type: 'video_chunk', videoGroupId, chunkIndex: i, totalChunks, text: chunkText, timestamp: Date.now() + i, replyToId: replyId, reactions: {}, expiresAt: expiryTimestamp }); }
         await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() }); await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() });
       } else if (file.type.startsWith('image/')) {
         setUploadText("Compressing..."); const b64 = await compressImage(file); const enc = await encryptText(b64, activeKey);
@@ -628,7 +556,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     if (burnFile) await processAndSendMedia(burnFile, burnDuration); setBurnText(''); setBurnFile(null); scrollToBottom();
   };
 
-  const saveStickerToVault = async (base64Str) => { try { const webpStr = await createStickerFromImage(base64Str); let newVault = [webpStr, ...savedStickers]; if (newVault.length > 20) newVault = newVault.slice(0, 20); setSavedStickers(newVault); localStorage.setItem('commslink_stickers', JSON.stringify(newVault)); alert("Added to Sticker Vault."); } catch (err) { alert("Failed to process sticker."); } };
+  const saveStickerToVault = async (base64Str) => { try { const webpStr = await createStickerFromImage(base64Str); let newVault = [webpStr, ...savedStickers]; if (newVault.length > 20) newVault = newVault.slice(0, 20); setSavedStickers(newVault); localStorage.setItem('commslink_stickers', JSON.stringify(newVault)); alert("Added to Sticker Vault."); } catch(err) { alert("Failed to process sticker."); } };
 
   const handleDragEnter = (e) => { e.preventDefault(); e.stopPropagation(); dragCounter.current++; if (e.dataTransfer.items && e.dataTransfer.items.length > 0) setIsDragging(true); };
   const handleDragLeave = (e) => { e.preventDefault(); e.stopPropagation(); dragCounter.current--; if (dragCounter.current === 0) setIsDragging(false); };
@@ -643,7 +571,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) mediaChunksRef.current.push(e.data); };
       mediaRecorder.onstop = async () => {
         setIsUploading(true); setUploadText("Encrypting Audio..."); clearInterval(recordingTimerRef.current); setRecordingTime(0);
-        const blob = new Blob(mediaChunksRef.current, { type: 'audio/webm' }); mediaStreamRef.current.getTracks().forEach(track => track.stop());
+        const blob = new Blob(mediaChunksRef.current, { type: 'audio/webm' }); mediaStreamRef.current.getTracks().forEach(track => track.stop()); 
         try { const base64Audio = await blobToBase64(blob); const encAudio = await encryptText(base64Audio, activeKey); await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: encAudio, type: 'audio', timestamp: Date.now(), replyToId: replyingTo ? replyingTo.id : null, reactions: {}, expiresAt: null }); await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() }); await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() }); setReplyingTo(null); scrollToBottom(); } catch (error) { alert("Failed to send audio."); }
         setIsUploading(false); setUploadText('');
       };
@@ -660,7 +588,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   };
 
   const filteredMessages = searchQuery.trim() ? messages.filter(m => m.isDecrypted && m.type === 'text' && m.decryptedText?.toLowerCase().includes(searchQuery.toLowerCase())) : messages;
-  const burnTimeOptions = [{ label: '1 Minute', val: 60000 }, { label: '5 Minutes', val: 300000 }, { label: '1 Hour', val: 3600000 }, { label: '24 Hours', val: 86400000 }];
+  const burnTimeOptions = [ { label: '1 Minute', val: 60000 }, { label: '5 Minutes', val: 300000 }, { label: '1 Hour', val: 3600000 }, { label: '24 Hours', val: 86400000 } ];
 
   return (
     <div className="flex-1 flex flex-col relative bg-[#050508] min-h-0 overflow-x-hidden" onClick={() => { setActiveMenu(null); setIsTimeDropdownOpen(false); setShowStickerPicker(false); }} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
@@ -673,8 +601,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           <h2 className="text-2xl font-mono text-white mb-2 text-center">Secure Uplink</h2>
           <p className="text-sm text-slate-400 mb-8 text-center max-w-sm">Apply cryptographic voice masking to your audio stream? This severely distorts the audio to prevent voice-print identification.</p>
           <div className="flex flex-col w-full max-w-xs gap-3">
-            <button onClick={() => startCall(true)} className={`py-4 rounded-xl bg-gradient-to-r ${t.btnGrad} text-white font-bold shadow-[0_0_20px_rgba(0,0,0,0.5)] flex items-center justify-center gap-2`}><MicOff className="w-5 h-5" /> Initiate Masked Call</button>
-            <button onClick={() => startCall(false)} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2"><Volume2 className="w-5 h-5" /> Standard Encrypted Call</button>
+            <button onClick={() => startCall(true)} className={`py-4 rounded-xl bg-gradient-to-r ${t.btnGrad} text-white font-bold shadow-[0_0_20px_rgba(0,0,0,0.5)] flex items-center justify-center gap-2`}><MicOff className="w-5 h-5"/> Initiate Masked Call</button>
+            <button onClick={() => startCall(false)} className="py-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center justify-center gap-2"><Volume2 className="w-5 h-5"/> Standard Encrypted Call</button>
             <button onClick={() => setCallState('idle')} className="mt-4 py-3 text-slate-500 hover:text-white font-bold">Cancel</button>
           </div>
         </div>
@@ -707,8 +635,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           <h2 className="text-xl font-bold text-white mb-1">Link Established</h2>
           <p className="text-2xl font-mono text-green-400 mb-12">{formatCallTime(callDuration)}</p>
           <div className="flex gap-6">
-            <button onClick={toggleMute} className={`w-16 h-16 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${isMuted ? 'bg-amber-500/20 text-amber-500 border border-amber-500/50' : 'bg-white/10 text-white'}`}>{isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}</button>
-            <button onClick={endCall} className="w-16 h-16 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-6 h-6 text-white" /></button>
+             <button onClick={toggleMute} className={`w-16 h-16 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${isMuted ? 'bg-amber-500/20 text-amber-500 border border-amber-500/50' : 'bg-white/10 text-white'}`}>{isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}</button>
+             <button onClick={endCall} className="w-16 h-16 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-6 h-6 text-white" /></button>
           </div>
         </div>
       )}
@@ -729,14 +657,14 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
               {burnFile ? (
                 <div className="relative mb-4 w-full h-32 bg-black/40 rounded-xl border border-orange-500/30 flex items-center justify-center overflow-hidden group">
                   {burnFile.type.startsWith('image/') ? <img src={URL.createObjectURL(burnFile)} className="w-full h-full object-cover opacity-60" /> : <div className="flex flex-col items-center text-orange-400 opacity-60"><Play className="w-8 h-8 mb-2" /><span>{burnFile.name}</span></div>}
-                  <button type="button" onClick={() => setBurnFile(null)} className="absolute top-2 right-2 p-1.5 bg-black/60 rounded-full text-white hover:bg-red-500/80 transition-all"><X className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => setBurnFile(null)} className="absolute top-2 right-2 p-1.5 bg-black/60 rounded-full text-white hover:bg-red-500/80 transition-all"><X className="w-4 h-4"/></button>
                 </div>
-              ) : (<textarea autoFocus value={burnText} onChange={(e) => setBurnText(e.target.value)} placeholder="Type confidential message..." rows="4" className="w-full bg-black/50 border border-orange-500/30 rounded-xl px-4 py-3 mb-4 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 resize-none text-sm text-white custom-scrollbar"></textarea>)}
+              ) : ( <textarea autoFocus value={burnText} onChange={(e) => setBurnText(e.target.value)} placeholder="Type confidential message..." rows="4" className="w-full bg-black/50 border border-orange-500/30 rounded-xl px-4 py-3 mb-4 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 resize-none text-sm text-white custom-scrollbar"></textarea> )}
               <div className="flex items-center gap-2 mb-6">
-                {!burnFile && !burnText && (<><input type="file" accept="image/*,video/*" className="hidden" ref={burnFileInputRef} onChange={e => { if (e.target.files[0]) setBurnFile(e.target.files[0]); }} /><button type="button" onClick={() => burnFileInputRef.current?.click()} className="p-3 bg-black/40 border border-white/5 rounded-xl text-slate-400 hover:text-orange-400 hover:border-orange-500/30 transition-all"><ImageIcon className="w-5 h-5" /></button></>)}
+                {!burnFile && !burnText && ( <><input type="file" accept="image/*,video/*" className="hidden" ref={burnFileInputRef} onChange={e => { if(e.target.files[0]) setBurnFile(e.target.files[0]); }} /><button type="button" onClick={() => burnFileInputRef.current?.click()} className="p-3 bg-black/40 border border-white/5 rounded-xl text-slate-400 hover:text-orange-400 hover:border-orange-500/30 transition-all"><ImageIcon className="w-5 h-5" /></button></> )}
                 <div className="relative flex-1">
                   <div onClick={() => setIsTimeDropdownOpen(!isTimeDropdownOpen)} className="flex items-center justify-between bg-black/40 p-3 rounded-xl border border-white/5 cursor-pointer hover:border-white/20 transition-all"><div className="flex items-center gap-2 text-slate-200 text-sm"><Clock className="w-4 h-4 text-slate-400" /> {burnTimeOptions.find(o => o.val === Number(burnDuration))?.label}</div><ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isTimeDropdownOpen ? 'rotate-180' : ''}`} /></div>
-                  {isTimeDropdownOpen && (<ul className="absolute bottom-full left-0 w-full mb-2 bg-[#222230] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[210] animate-fade-in">{burnTimeOptions.map((opt) => (<li key={opt.val} onClick={() => { setBurnDuration(opt.val); setIsTimeDropdownOpen(false); }} className={`px-4 py-3 text-sm cursor-pointer hover:bg-orange-500/20 transition-colors ${burnDuration === opt.val ? 'text-orange-400 font-bold bg-orange-500/10' : 'text-slate-300'}`}>{opt.label}</li>))}</ul>)}
+                  {isTimeDropdownOpen && ( <ul className="absolute bottom-full left-0 w-full mb-2 bg-[#222230] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[210] animate-fade-in">{burnTimeOptions.map((opt) => (<li key={opt.val} onClick={() => { setBurnDuration(opt.val); setIsTimeDropdownOpen(false); }} className={`px-4 py-3 text-sm cursor-pointer hover:bg-orange-500/20 transition-colors ${burnDuration === opt.val ? 'text-orange-400 font-bold bg-orange-500/10' : 'text-slate-300'}`}>{opt.label}</li>))}</ul> )}
                 </div>
               </div>
               <button type="submit" disabled={!burnText.trim() && !burnFile} className={`w-full py-3 rounded-xl bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white font-bold text-sm shadow-lg shadow-red-500/20 disabled:opacity-50 transition-all`}>Deploy Secret</button>
@@ -784,22 +712,22 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       )}
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col custom-scrollbar min-h-0 relative" onScroll={handleScroll} ref={messagesContainerRef}>
-        {filteredMessages.length === 0 ? <div className="flex-1 flex flex-col items-center justify-center text-slate-500 opacity-50"><ShieldCheck className="w-16 h-16 mb-4" /><p className="text-sm">{searchQuery ? 'No matches found.' : 'Secure channel established.'}</p></div> :
-          filteredMessages.map((msg, index) => {
-            const isMine = msg.senderId === user.uid; const repliedMsg = msg.replyToId ? messages.find(m => m.id === msg.replyToId) : null;
-            const hasReactions = msg.reactions && Object.keys(msg.reactions).length > 0; const isRead = !isGroup && chatData?.lastRead && chatData.lastRead[otherUserId] >= msg.timestamp;
-            const prevMsg = index > 0 ? filteredMessages[index - 1] : null; const isConsecutive = prevMsg && prevMsg.senderId === msg.senderId && (msg.timestamp - prevMsg.timestamp < 300000);
-            let showDayDivider = false; let dayString = ''; if (index === 0) { showDayDivider = true; dayString = formatDay(msg.timestamp); } else if (!isSameDay(prevMsg.timestamp, msg.timestamp)) { showDayDivider = true; dayString = formatDay(msg.timestamp); }
-            return (
-              <MessageItem key={msg.id} index={index} msg={msg} isMine={isMine} isGroup={isGroup} isConsecutive={isConsecutive} repliedMsg={repliedMsg} hasReactions={hasReactions} isRead={isRead} user={user} t={t} themeMode={themeMode} toggleReaction={toggleReaction} activeMenu={activeMenu} setActiveMenu={setActiveMenu} setReplyingTo={setReplyingTo} setZoomedImage={setZoomedImage} saveSticker={saveStickerToVault} showDayDivider={showDayDivider} dayString={dayString} startEditing={startEditing} deleteMessage={deleteMessage} />
-            );
-          })}
+        {filteredMessages.length === 0 ? <div className="flex-1 flex flex-col items-center justify-center text-slate-500 opacity-50"><ShieldCheck className="w-16 h-16 mb-4" /><p className="text-sm">{searchQuery ? 'No matches found.' : 'Secure channel established.'}</p></div> : 
+        filteredMessages.map((msg, index) => {
+          const isMine = msg.senderId === user.uid; const repliedMsg = msg.replyToId ? messages.find(m => m.id === msg.replyToId) : null;
+          const hasReactions = msg.reactions && Object.keys(msg.reactions).length > 0; const isRead = !isGroup && chatData?.lastRead && chatData.lastRead[otherUserId] >= msg.timestamp;
+          const prevMsg = index > 0 ? filteredMessages[index - 1] : null; const isConsecutive = prevMsg && prevMsg.senderId === msg.senderId && (msg.timestamp - prevMsg.timestamp < 300000);
+          let showDayDivider = false; let dayString = ''; if (index === 0) { showDayDivider = true; dayString = formatDay(msg.timestamp); } else if (!isSameDay(prevMsg.timestamp, msg.timestamp)) { showDayDivider = true; dayString = formatDay(msg.timestamp); }
+          return (
+            <MessageItem key={msg.id} index={index} msg={msg} isMine={isMine} isGroup={isGroup} isConsecutive={isConsecutive} repliedMsg={repliedMsg} hasReactions={hasReactions} isRead={isRead} user={user} t={t} themeMode={themeMode} toggleReaction={toggleReaction} activeMenu={activeMenu} setActiveMenu={setActiveMenu} setReplyingTo={setReplyingTo} setZoomedImage={setZoomedImage} saveSticker={saveStickerToVault} showDayDivider={showDayDivider} dayString={dayString} startEditing={startEditing} deleteMessage={deleteMessage} />
+          );
+        })}
         <div ref={messagesEndRef} className="h-4" />
       </div>
 
       {showScrollButton && (
         <button onClick={scrollToBottom} className={`absolute bottom-20 right-4 p-3 rounded-full bg-gradient-to-r ${t.sendBtn} text-white shadow-[0_0_15px_rgba(0,0,0,0.8)] border border-white/20 transition-all hover:scale-110 z-40 animate-pop-in group`}>
-          <ArrowDown className="w-5 h-5 group-hover:animate-bounce" />{unreadCount > 0 && (<span className="absolute -top-1 -left-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-[0_0_10px_rgba(239,68,68,0.8)] border border-[#050508] animate-pulse">{unreadCount}</span>)}
+          <ArrowDown className="w-5 h-5 group-hover:animate-bounce" />{unreadCount > 0 && ( <span className="absolute -top-1 -left-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-[0_0_10px_rgba(239,68,68,0.8)] border border-[#050508] animate-pulse">{unreadCount}</span> )}
         </button>
       )}
 
@@ -819,25 +747,25 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         {showStickerPicker && (
           <div className="p-4 bg-[#1a1a24] border-b border-white/5 h-48 overflow-y-auto custom-scrollbar animate-slide-up origin-bottom" onClick={e => e.stopPropagation()}>
             <h4 className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 px-1">Your Sticker Vault</h4>
-            {savedStickers.length === 0 ? (<p className="text-sm text-slate-500 italic px-1">Vault empty. Long press a photo and click the sticker icon to save.</p>) : (<div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3">{savedStickers.map((stk, i) => (<img key={i} src={stk} onClick={() => handleSendSticker(stk)} className="w-full h-16 object-contain cursor-pointer hover:scale-110 transition-transform drop-shadow-md bg-black/20 rounded-lg p-1" alt="sticker" />))}</div>)}
+            {savedStickers.length === 0 ? ( <p className="text-sm text-slate-500 italic px-1">Vault empty. Long press a photo and click the sticker icon to save.</p> ) : ( <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3">{savedStickers.map((stk, i) => ( <img key={i} src={stk} onClick={() => handleSendSticker(stk)} className="w-full h-16 object-contain cursor-pointer hover:scale-110 transition-transform drop-shadow-md bg-black/20 rounded-lg p-1" alt="sticker" /> ))}</div> )}
           </div>
         )}
 
         <div className="p-3 sm:p-4 flex gap-2 relative items-center">
           {!isRecording && (
             <div className="flex items-center gap-1 shrink-0">
-              <input type="file" accept="image/*,video/*" className="hidden" ref={fileInputRef} onChange={(e) => { if (e.target.files[0]) { if (!e.target.files[0].type.startsWith('image/') && !e.target.files[0].type.startsWith('video/')) { alert("Only images and videos are allowed."); return; } processAndSendMedia(e.target.files[0]); e.target.value = ''; } }} />
+              <input type="file" accept="image/*,video/*" className="hidden" ref={fileInputRef} onChange={(e) => { if(e.target.files[0]) { if (!e.target.files[0].type.startsWith('image/') && !e.target.files[0].type.startsWith('video/')) { alert("Only images and videos are allowed."); return; } processAndSendMedia(e.target.files[0]); e.target.value=''; } }} />
               <button onClick={() => fileInputRef.current?.click()} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Paperclip className="w-5 h-5" /></button>
               <button onClick={(e) => { e.stopPropagation(); setShowStickerPicker(!showStickerPicker); }} className={`p-2 sm:p-2.5 ${showStickerPicker ? t.text : 'text-slate-400'} hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Sticker className="w-5 h-5" /></button>
               <button onClick={startRecording} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Mic className="w-5 h-5" /></button>
             </div>
           )}
-          {isUploading && uploadText ? (<div className={`flex-1 flex justify-between bg-black/50 border border-white/10 rounded-xl px-4 py-3 animate-pulse overflow-hidden`}><span className={`font-bold tracking-widest text-xs flex items-center gap-2 ${t.text} truncate`}><Loader2 className="w-4 h-4 animate-spin shrink-0" /> {uploadText}</span></div>) : isRecording ? (
-            <div className="flex-1 flex justify-between bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 animate-pulse overflow-hidden"><span className="text-red-400 font-bold tracking-widest text-sm flex items-center gap-2 truncate"><div className="w-2 h-2 rounded-full bg-red-500 shrink-0"></div> REC</span><span className="text-red-400 font-bold">{Math.floor(recordingTime / 60)}:{recordingTime % 60 < 10 ? '0' : ''}{recordingTime % 60}</span></div>
+          {isUploading && uploadText ? ( <div className={`flex-1 flex justify-between bg-black/50 border border-white/10 rounded-xl px-4 py-3 animate-pulse overflow-hidden`}><span className={`font-bold tracking-widest text-xs flex items-center gap-2 ${t.text} truncate`}><Loader2 className="w-4 h-4 animate-spin shrink-0"/> {uploadText}</span></div> ) : isRecording ? (
+            <div className="flex-1 flex justify-between bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 animate-pulse overflow-hidden"><span className="text-red-400 font-bold tracking-widest text-sm flex items-center gap-2 truncate"><div className="w-2 h-2 rounded-full bg-red-500 shrink-0"></div> REC</span><span className="text-red-400 font-bold">{Math.floor(recordingTime/60)}:{recordingTime%60 < 10 ? '0':''}{recordingTime%60}</span></div>
           ) : (
             <form onSubmit={handleSendText} className="flex-1 relative"><input type="text" value={inputText} onFocus={() => setShowStickerPicker(false)} onChange={handleTypingChange} placeholder={"Secure message..."} className={`w-full bg-black/50 border border-white/10 rounded-xl py-3 px-4 text-sm ${t.ring} focus:ring-1 outline-none transition-all placeholder:text-slate-600`} /></form>
           )}
-          {isRecording ? (<button onClick={stopRecording} className="bg-red-600 hover:bg-red-500 p-3 rounded-xl text-white transition-colors shadow-lg shadow-red-500/20 shrink-0"><Square className="w-5 h-5 fill-current" /></button>) : (<button onClick={handleSendText} disabled={(!inputText.trim() && !isUploading) || isUploading} className={`bg-gradient-to-r ${t.sendBtn} p-3 rounded-xl text-white disabled:opacity-50 transition-all ${t.glow} hover:-translate-y-0.5 active:scale-95 shrink-0`}><Send className="w-5 h-5 ml-0.5" /></button>)}
+          {isRecording ? ( <button onClick={stopRecording} className="bg-red-600 hover:bg-red-500 p-3 rounded-xl text-white transition-colors shadow-lg shadow-red-500/20 shrink-0"><Square className="w-5 h-5 fill-current" /></button> ) : ( <button onClick={handleSendText} disabled={(!inputText.trim() && !isUploading) || isUploading} className={`bg-gradient-to-r ${t.sendBtn} p-3 rounded-xl text-white disabled:opacity-50 transition-all ${t.glow} hover:-translate-y-0.5 active:scale-95 shrink-0`}><Send className="w-5 h-5 ml-0.5" /></button> )}
         </div>
       </div>
     </div>
@@ -847,13 +775,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 // --- 4. MAIN APP ROUTER ---
 export default function App() {
   const [user, setUser] = useState(null); const [currentUserData, setCurrentUserData] = useState(null); const [usersList, setUsersList] = useState([]);
-  const [chatThreads, setChatThreads] = useState([]); const [activeChat, setActiveChat] = useState(null); const [encryptionKeys, setEncryptionKeys] = useState([]);
+  const [chatThreads, setChatThreads] = useState([]); const [activeChat, setActiveChat] = useState(null); const [encryptionKeys, setEncryptionKeys] = useState([]); 
   const [themeMode, setThemeMode] = useState(() => localStorage.getItem('commslink_theme') || 'cyberpunk'); const t = themeStyles[themeMode];
   const [showKeyModal, setShowKeyModal] = useState(false); const [showProfileModal, setShowProfileModal] = useState(false); const [targetThread, setTargetThread] = useState(null); const [tempKey, setTempKey] = useState('');
   const [connectMode, setConnectMode] = useState('agent'); const [searchAgentId, setSearchAgentId] = useState(''); const [groupNameInput, setGroupNameInput] = useState(''); const [isSearching, setIsSearching] = useState(false);
   const [editName, setEditName] = useState(''); const [isSavingProfile, setIsSavingProfile] = useState(false); const avatarInputRef = useRef(null); const [copiedId, setCopiedId] = useState(false);
 
-  useEffect(() => { const unsub = onAuthStateChanged(auth, async (u) => { setUser(u); if (u) await updateDoc(doc(db, 'users', u.uid), { lastSeen: Date.now() }).catch(() => { }); }); return () => unsub(); }, []);
+  useEffect(() => { const unsub = onAuthStateChanged(auth, async (u) => { setUser(u); if (u) await updateDoc(doc(db, 'users', u.uid), { lastSeen: Date.now() }).catch(()=>{}); }); return () => unsub(); }, []);
   useEffect(() => { if (!user) return; const unsub = onSnapshot(collection(db, 'users'), (snapshot) => { const others = []; snapshot.forEach(doc => { if (doc.id === user.uid) { setCurrentUserData(doc.data()); if (!editName) setEditName(doc.data().displayName || ''); } else others.push(doc.data()); }); setUsersList(others); }); return () => unsub(); }, [user]);
   useEffect(() => { if (!user) return; const q = query(collection(db, 'chat_threads'), where('participants', 'array-contains', user.uid)); const unsub = onSnapshot(q, (snapshot) => { const threads = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); threads.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0)); setChatThreads(threads); }); return () => unsub(); }, [user]);
 
@@ -874,18 +802,18 @@ export default function App() {
 
   const triggerChatEntry = (thread) => {
     let keys = JSON.parse(localStorage.getItem('commslink_keys') || '{}')[thread.id];
-    if (keys) {
-      if (typeof keys === 'string') keys = [keys];
-      setEncryptionKeys(keys);
-      setActiveChat(thread);
-      try { window.history.pushState({ chat: thread.id }, ''); } catch (e) { }
-    }
+    if (keys) { 
+      if (typeof keys === 'string') keys = [keys]; 
+      setEncryptionKeys(keys); 
+      setActiveChat(thread); 
+      try { window.history.pushState({ chat: thread.id }, ''); } catch(e){} 
+    } 
     else { setTargetThread(thread); setTempKey(''); setShowKeyModal(true); }
   };
   const handleChangeKey = () => { setTargetThread(activeChat); setTempKey(''); setShowKeyModal(true); };
-  const confirmChatEntry = (e) => { e.preventDefault(); if (!tempKey.trim()) return; const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}'); let currentKeys = savedKeys[targetThread.id] || []; if (typeof currentKeys === 'string') currentKeys = [currentKeys]; if (!currentKeys.includes(tempKey.trim())) currentKeys.push(tempKey.trim()); savedKeys[targetThread.id] = currentKeys; localStorage.setItem('commslink_keys', JSON.stringify(savedKeys)); setEncryptionKeys(currentKeys); setActiveChat(targetThread); setShowKeyModal(false); try { window.history.pushState({ chat: targetThread.id }, ''); } catch (e) { } };
+  const confirmChatEntry = (e) => { e.preventDefault(); if (!tempKey.trim()) return; const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}'); let currentKeys = savedKeys[targetThread.id] || []; if (typeof currentKeys === 'string') currentKeys = [currentKeys]; if (!currentKeys.includes(tempKey.trim())) currentKeys.push(tempKey.trim()); savedKeys[targetThread.id] = currentKeys; localStorage.setItem('commslink_keys', JSON.stringify(savedKeys)); setEncryptionKeys(currentKeys); setActiveChat(targetThread); setShowKeyModal(false); try { window.history.pushState({ chat: targetThread.id }, ''); } catch(e){} };
 
-  const handleDeleteChat = async (threadId, isGroup) => { if (window.confirm(isGroup ? "Are you sure you want to leave this group?" : "Are you sure you want to delete this secure channel?")) { try { if (isGroup) { const groupRef = doc(db, 'chat_threads', threadId); const groupSnap = await getDoc(groupRef); const newParticipants = groupSnap.data().participants.filter(id => id !== user.uid); if (newParticipants.length === 0) await deleteDoc(groupRef); else await updateDoc(groupRef, { participants: newParticipants }); } else await deleteDoc(doc(db, 'chat_threads', threadId)); const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}'); delete savedKeys[threadId]; localStorage.setItem('commslink_keys', JSON.stringify(savedKeys)); if (activeChat?.id === threadId) window.history.back(); } catch (err) { alert("Action failed."); } } };
+  const handleDeleteChat = async (threadId, isGroup) => { if(window.confirm(isGroup ? "Are you sure you want to leave this group?" : "Are you sure you want to delete this secure channel?")) { try { if (isGroup) { const groupRef = doc(db, 'chat_threads', threadId); const groupSnap = await getDoc(groupRef); const newParticipants = groupSnap.data().participants.filter(id => id !== user.uid); if (newParticipants.length === 0) await deleteDoc(groupRef); else await updateDoc(groupRef, { participants: newParticipants }); } else await deleteDoc(doc(db, 'chat_threads', threadId)); const savedKeys = JSON.parse(localStorage.getItem('commslink_keys') || '{}'); delete savedKeys[threadId]; localStorage.setItem('commslink_keys', JSON.stringify(savedKeys)); if (activeChat?.id === threadId) window.history.back(); } catch (err) { alert("Action failed."); } } };
 
   const globalStyles = `
     @keyframes popIn { 0% { opacity: 0; transform: translateY(10px) scale(0.98); } 100% { opacity: 1; transform: translateY(0) scale(1); } } 
@@ -971,14 +899,14 @@ export default function App() {
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-          {chatThreads.length === 0 ? (<div className="text-center p-8 mt-4 text-slate-500 opacity-50"><MessageSquare className="w-8 h-8 mx-auto mb-2" /><p className="text-xs">No active channels.</p></div>) : (
+          {chatThreads.length === 0 ? ( <div className="text-center p-8 mt-4 text-slate-500 opacity-50"><MessageSquare className="w-8 h-8 mx-auto mb-2" /><p className="text-xs">No active channels.</p></div> ) : (
             chatThreads.map((thread) => {
               const isGroup = thread.isGroup; let chatName = "Unknown"; let chatAvatar = null; let isOnline = false;
               if (isGroup) chatName = thread.name || "Group Server";
               else {
                 const otherUserId = thread.participants.find(id => id !== user.uid); const otherUserAgent = usersList.find(u => u.uid === otherUserId);
                 // FIXED: Safe optional chaining for older chats
-                chatName = thread.customName || otherUserAgent?.displayName || thread.participantNames?.[otherUserId] || 'Unknown Agent';
+                chatName = thread.customName || otherUserAgent?.displayName || thread.participantNames?.[otherUserId] || 'Unknown Agent'; 
                 chatAvatar = otherUserAgent?.avatarData || null;
                 if (otherUserAgent && otherUserAgent.lastSeen && Date.now() - otherUserAgent.lastSeen < 300000) isOnline = true;
               }
@@ -995,10 +923,10 @@ export default function App() {
       </div>
 
       <div className={`${!activeChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col relative bg-[#050508] min-h-0`}>
-        {activeChat ? (<ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={chatThreads.find(th => th.id === activeChat.id) || activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => { try { window.history.back(); } catch (e) { setActiveChat(null); } }} deleteChat={handleDeleteChat} t={t} themeMode={themeMode} />) : (
+        {activeChat ? ( <ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={chatThreads.find(th => th.id === activeChat.id) || activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => { try { window.history.back(); } catch(e){ setActiveChat(null); } }} deleteChat={handleDeleteChat} t={t} themeMode={themeMode} /> ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-500/40 relative">
-            <div className="absolute inset-0 bg-center bg-no-repeat bg-contain opacity-5" style={{ backgroundImage: "url('data:image/svg+xml;utf8,<svg width=\"100\" height=\"100\" viewBox=\"0 0 100 100\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M50 20L80 40V70L50 90L20 70V40L50 20Z\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>')" }}></div>
-            <ShieldCheck className="w-24 h-24 mb-6 drop-shadow-2xl" /><h3 className="font-mono text-xl tracking-widest uppercase mb-2">CommsLink Standby</h3><p className="text-sm">Select a channel from the directory to establish uplink.</p>
+             <div className="absolute inset-0 bg-center bg-no-repeat bg-contain opacity-5" style={{ backgroundImage: "url('data:image/svg+xml;utf8,<svg width=\"100\" height=\"100\" viewBox=\"0 0 100 100\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M50 20L80 40V70L50 90L20 70V40L50 20Z\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>')" }}></div>
+             <ShieldCheck className="w-24 h-24 mb-6 drop-shadow-2xl" /><h3 className="font-mono text-xl tracking-widest uppercase mb-2">CommsLink Standby</h3><p className="text-sm">Select a channel from the directory to establish uplink.</p>
           </div>
         )}
       </div>
