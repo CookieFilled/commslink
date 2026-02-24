@@ -368,7 +368,36 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   }, [threadId, user.uid, callState]);
 
   const startCall = async (useMask) => {
-    setIsMasked(useMask); setCallState('calling');
+    setIsMasked(useMask);
+
+    // Guard: getUserMedia requires a secure context (https or localhost)
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert("Voice calls require a secure connection (HTTPS). Please ensure the app is served over HTTPS.");
+      setCallState('idle');
+      return;
+    }
+
+    // Step 1: Request mic access FIRST before changing any call state
+    let rawStream;
+    try {
+      rawStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (err) {
+      console.error('[WebRTC] getUserMedia failed:', err.name, err.message);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        alert("Microphone access was denied. Please allow microphone access in your browser's site settings and try again.");
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        alert("No microphone found. Please connect a microphone and try again.");
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        alert("Your microphone is already in use by another app. Please close other apps using the mic and try again.");
+      } else {
+        alert("Could not access microphone: " + (err.message || err.name));
+      }
+      setCallState('idle');
+      return;
+    }
+
+    // Step 2: Mic is available — now set up WebRTC and change call state
+    setCallState('calling');
     peerConnection.current = new RTCPeerConnection(iceServers);
 
     peerConnection.current.onicecandidate = (event) => {
@@ -376,11 +405,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     };
 
     peerConnection.current.ontrack = (event) => {
-      if (remoteAudioRef.current) { remoteAudioRef.current.srcObject = event.streams[0]; remoteAudioRef.current.play(); }
+      if (remoteAudioRef.current) { remoteAudioRef.current.srcObject = event.streams[0]; remoteAudioRef.current.play().catch(e => console.warn('[WebRTC] Remote audio play error:', e)); }
     };
 
     try {
-      const rawStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (useMask) {
         const { processedStream, audioCtx } = await setupMaskedAudio(rawStream);
         audioContextRef.current = audioCtx; localStreamRef.current = rawStream;
@@ -393,29 +421,60 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       const offer = await peerConnection.current.createOffer();
       await peerConnection.current.setLocalDescription(offer);
 
-      await setDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'ringing', callerId: user.uid, offer: { type: offer.type, sdp: offer.sdp }, isMasked: useMask, timestamp: Date.now() });
       const oldCandidates = await getDocs(collection(db, 'chat_threads', threadId, 'call_candidates'));
       oldCandidates.forEach(c => deleteDoc(c.ref));
+      await setDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'ringing', callerId: user.uid, offer: { type: offer.type, sdp: offer.sdp }, isMasked: useMask, timestamp: Date.now() });
 
-    } catch (err) { alert("Mic access denied."); endCallLocally(); }
+    } catch (err) {
+      console.error('[WebRTC] Call setup failed:', err);
+      alert("Failed to establish call: " + (err.message || err.name));
+      endCallLocally();
+    }
   };
 
   const answerCall = async () => {
+    // Guard: getUserMedia requires a secure context (https or localhost)
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert("Voice calls require a secure connection (HTTPS). Please ensure the app is served over HTTPS.");
+      endCallLocally();
+      return;
+    }
+
+    // Step 1: Request mic access FIRST before any WebRTC setup
+    let rawStream;
+    try {
+      rawStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (err) {
+      console.error('[WebRTC] getUserMedia failed on answer:', err.name, err.message);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        alert("Microphone access was denied. Please allow microphone access in your browser's site settings and try again.");
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        alert("No microphone found. Please connect a microphone and try again.");
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        alert("Your microphone is already in use by another app. Please close other apps using the mic and try again.");
+      } else {
+        alert("Could not access microphone: " + (err.message || err.name));
+      }
+      endCallLocally();
+      return;
+    }
+
+    // Step 2: Mic is available — set up the peer connection
     peerConnection.current = new RTCPeerConnection(iceServers);
     peerConnection.current.onicecandidate = (event) => {
       if (event.candidate) addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { senderId: user.uid, candidate: event.candidate.toJSON() });
     };
     peerConnection.current.ontrack = (event) => {
-      if (remoteAudioRef.current) { remoteAudioRef.current.srcObject = event.streams[0]; remoteAudioRef.current.play(); }
+      if (remoteAudioRef.current) { remoteAudioRef.current.srcObject = event.streams[0]; remoteAudioRef.current.play().catch(e => console.warn('[WebRTC] Remote audio play error:', e)); }
     };
 
     try {
-      const rawStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = rawStream;
       rawStream.getTracks().forEach(track => peerConnection.current.addTrack(track, rawStream));
 
       const callDoc = await getDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'));
       const callData = callDoc.data();
+      if (!callData || !callData.offer) { throw new Error('Call signal data missing or invalid.'); }
 
       await peerConnection.current.setRemoteDescription(new RTCSessionDescription(callData.offer));
       const answer = await peerConnection.current.createAnswer();
@@ -423,7 +482,11 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
       await updateDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'answered', answer: { type: answer.type, sdp: answer.sdp } });
       setCallState('connected'); startCallTimer();
-    } catch (err) { alert("Failed to answer. Mic needed."); endCallLocally(); }
+    } catch (err) {
+      console.error('[WebRTC] Answer setup failed:', err);
+      alert("Failed to answer call: " + (err.message || err.name));
+      endCallLocally();
+    }
   };
 
   const endCall = async () => {
