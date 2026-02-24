@@ -374,23 +374,30 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     
     setIsVideoEnabled(isVideo);
     updateCallState('calling');
-    peerConnection.current = new RTCPeerConnection(iceServers);
-    
-    peerConnection.current.onicecandidate = (event) => {
-      if (event.candidate) {
-        addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { 
-          senderId: user.uid, candidate: event.candidate.toJSON() 
-        }).catch(err => console.error("Firebase Rule Blocked ICE:", err));
-      }
-    };
-
-    peerConnection.current.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        setRemoteStream(event.streams[0]);
-      }
-    };
 
     try {
+      // FIX: Clean up old candidates BEFORE starting the new connection
+      const oldCandidates = await getDocs(collection(db, 'chat_threads', threadId, 'call_candidates'));
+      const deletePromises = oldCandidates.docs.map(c => deleteDoc(c.ref));
+      await Promise.all(deletePromises);
+
+      peerConnection.current = new RTCPeerConnection(iceServers);
+      
+      peerConnection.current.onicecandidate = (event) => {
+        if (event.candidate) {
+          addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { 
+            senderId: user.uid, candidate: event.candidate.toJSON() 
+          }).catch(err => console.error("Firebase Rule Blocked ICE:", err));
+        }
+      };
+
+      peerConnection.current.ontrack = (event) => {
+        if (event.streams && event.streams[0]) {
+          // FIX: Clone the stream so React detects the state change when new tracks are added
+          setRemoteStream(new MediaStream(event.streams[0].getTracks()));
+        }
+      };
+
       const constraints = isVideo ? { audio: true, video: { facingMode: "user" } } : { audio: true };
       const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
       
@@ -408,11 +415,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         status: 'ringing', callerId: user.uid, offer: { type: offer.type, sdp: offer.sdp }, 
         isVideo: isVideo, timestamp: Date.now() 
       }).catch(err => console.error("Firebase Rule Blocked Signal:", err));
-      
-      // Cleanup old candidates safely
-      getDocs(collection(db, 'chat_threads', threadId, 'call_candidates')).then(old => {
-        old.forEach(c => deleteDoc(c.ref));
-      });
 
     } catch (err) { 
       console.error("Call Setup Error:", err);
@@ -422,23 +424,24 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   };
 
   const answerCall = async () => {
-    peerConnection.current = new RTCPeerConnection(iceServers);
-    
-    peerConnection.current.onicecandidate = (event) => {
-      if (event.candidate) {
-        addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { 
-          senderId: user.uid, candidate: event.candidate.toJSON() 
-        }).catch(err => console.error("Firebase Rule Blocked ICE:", err));
-      }
-    };
-
-    peerConnection.current.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        setRemoteStream(event.streams[0]);
-      }
-    };
-
     try {
+      peerConnection.current = new RTCPeerConnection(iceServers);
+      
+      peerConnection.current.onicecandidate = (event) => {
+        if (event.candidate) {
+          addDoc(collection(db, 'chat_threads', threadId, 'call_candidates'), { 
+            senderId: user.uid, candidate: event.candidate.toJSON() 
+          }).catch(err => console.error("Firebase Rule Blocked ICE:", err));
+        }
+      };
+
+      peerConnection.current.ontrack = (event) => {
+        if (event.streams && event.streams[0]) {
+          // FIX: Clone the stream here as well
+          setRemoteStream(new MediaStream(event.streams[0].getTracks()));
+        }
+      };
+
       const callDoc = await getDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'));
       const callData = callDoc.data();
       
