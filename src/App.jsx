@@ -148,7 +148,11 @@ const themeStyles = {
   cottonCandy: { name: 'Cotton Candy', text: 'text-pink-400', border: 'border-pink-300/30', ring: 'focus:ring-pink-300/50', bgLight: 'bg-pink-900/30', btnGrad: 'from-pink-400 to-sky-400 hover:from-pink-300 hover:to-sky-300', sendBtn: 'from-pink-400 to-sky-400 hover:from-pink-300 hover:to-sky-300', msgMine: 'bg-pink-800/40 border-pink-300/30 text-pink-50', glow: 'shadow-[0_0_20px_rgba(244,114,182,0.15)]', title: 'text-pink-400 drop-shadow-[0_2px_10px_rgba(244,114,182,0.3)]', activeTab: 'bg-pink-400/20 border-pink-400/40 text-white' },
   matcha: { name: 'Matcha', text: 'text-lime-400', border: 'border-lime-300/30', ring: 'focus:ring-lime-300/50', bgLight: 'bg-lime-900/30', btnGrad: 'from-lime-500 to-emerald-400 hover:from-lime-400 hover:to-emerald-300', sendBtn: 'from-lime-500 to-emerald-400 hover:from-lime-400 hover:to-emerald-300', msgMine: 'bg-lime-800/40 border-lime-300/30 text-lime-50', glow: 'shadow-[0_0_20px_rgba(163,230,53,0.15)]', title: 'text-lime-400 drop-shadow-[0_2px_10px_rgba(163,230,53,0.3)]', activeTab: 'bg-lime-400/20 border-lime-400/40 text-white' },
   lavender: { name: 'Lavender', text: 'text-purple-300', border: 'border-purple-300/30', ring: 'focus:ring-purple-300/50', bgLight: 'bg-purple-900/30', btnGrad: 'from-purple-400 to-indigo-400 hover:from-purple-300 hover:to-indigo-300', sendBtn: 'from-purple-400 to-indigo-400 hover:from-purple-300 hover:to-indigo-300', msgMine: 'bg-purple-800/40 border-purple-300/30 text-purple-50', glow: 'shadow-[0_0_20px_rgba(192,132,252,0.15)]', title: 'text-purple-300 drop-shadow-[0_2px_10px_rgba(192,132,252,0.3)]', activeTab: 'bg-purple-400/20 border-purple-400/40 text-white' },
-  peachy: { name: 'Peachy', text: 'text-rose-300', border: 'border-rose-300/30', ring: 'focus:ring-rose-300/50', bgLight: 'bg-rose-900/30', btnGrad: 'from-rose-400 to-orange-300 hover:from-rose-300 hover:to-orange-200', sendBtn: 'from-rose-400 to-orange-300 hover:from-rose-300 hover:to-orange-200', msgMine: 'bg-rose-800/40 border-rose-300/30 text-rose-50', glow: 'shadow-[0_0_20px_rgba(251,113,133,0.15)]', title: 'text-rose-300 drop-shadow-[0_2px_10px_rgba(251,113,133,0.3)]', activeTab: 'bg-rose-400/20 border-rose-400/40 text-white' }
+  peachy: { name: 'Peachy', text: 'text-rose-300', border: 'border-rose-300/30', ring: 'focus:ring-rose-300/50', bgLight: 'bg-rose-900/30', btnGrad: 'from-rose-400 to-orange-300 hover:from-rose-300 hover:to-orange-200', sendBtn: 'from-rose-400 to-orange-300 hover:from-rose-300 hover:to-orange-200', msgMine: 'bg-rose-800/40 border-rose-300/30 text-rose-50', glow: 'shadow-[0_0_20px_rgba(251,113,133,0.15)]', title: 'text-rose-300 drop-shadow-[0_2px_10px_rgba(251,113,133,0.3)]', activeTab: 'bg-rose-400/20 border-rose-400/40 text-white' },
+  cottonCandyLight: { name: 'Cotton Candy (Light)', isLight: true, text: 'text-pink-500', border: 'border-pink-200', ring: 'focus:ring-pink-300', bgLight: 'bg-pink-100', btnGrad: 'from-pink-300 to-rose-300 hover:from-pink-400 hover:to-rose-400', sendBtn: 'from-pink-400 to-rose-400 text-white hover:from-pink-500 hover:to-rose-500', msgMine: 'bg-pink-50 border-pink-200 text-pink-800', glow: 'shadow-[0_4px_15px_rgba(244,114,182,0.2)]', title: 'text-pink-500', activeTab: 'bg-pink-100 border-pink-200 text-pink-700' },
+  matchaLight: { name: 'Matcha (Light)', isLight: true, text: 'text-lime-600', border: 'border-lime-200', ring: 'focus:ring-lime-300', bgLight: 'bg-lime-100', btnGrad: 'from-lime-300 to-green-300 hover:from-lime-400 hover:to-green-400', sendBtn: 'from-lime-400 to-green-400 text-white hover:from-lime-500 hover:to-green-500', msgMine: 'bg-lime-50 border-lime-200 text-lime-800', glow: 'shadow-[0_4px_15px_rgba(163,230,53,0.2)]', title: 'text-lime-600', activeTab: 'bg-lime-100 border-lime-200 text-lime-700' },
+  lavenderLight: { name: 'Lavender (Light)', isLight: true, text: 'text-purple-500', border: 'border-purple-200', ring: 'focus:ring-purple-300', bgLight: 'bg-purple-100', btnGrad: 'from-purple-300 to-indigo-300 hover:from-purple-400 hover:to-indigo-400', sendBtn: 'from-purple-400 to-indigo-400 text-white hover:from-purple-500 hover:to-indigo-500', msgMine: 'bg-purple-50 border-purple-200 text-purple-800', glow: 'shadow-[0_4px_15px_rgba(192,132,252,0.2)]', title: 'text-purple-500', activeTab: 'bg-purple-100 border-purple-200 text-purple-700' },
+  peachyLight: { name: 'Peachy (Light)', isLight: true, text: 'text-rose-500', border: 'border-rose-200', ring: 'focus:ring-rose-300', bgLight: 'bg-rose-100', btnGrad: 'from-rose-300 to-orange-200 hover:from-rose-400 hover:to-orange-300', sendBtn: 'from-rose-400 to-orange-300 text-white hover:from-rose-500 hover:to-orange-400', msgMine: 'bg-rose-50 border-rose-200 text-rose-800', glow: 'shadow-[0_4px_15px_rgba(251,113,133,0.2)]', title: 'text-rose-500', activeTab: 'bg-rose-100 border-rose-200 text-rose-700' }
 };
 
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '🔥', '🥺', '🎉', '💯', '🤔', '👀', '🙌', '👏', '🙏', '✨', '💀', '😭', '🤯', '😡', '🤢', '🤡', '👻', '👽', '🤖', '💩', '😎', '🤓', '🥳', '😴', '🙄', '🤐', '🤫', '🤬', '😈', '✌️', '🤘', '👌', '🤌', '💪', '🧠', '🖕', '🙂', '🫦', '🥵', '🥶', '🥴', '🧊', '🩸', '🧪', '📉'];
@@ -170,45 +174,45 @@ const AuthScreen = ({ t }) => {
     setLoading(false);
   };
   return (
-    <div className="flex h-[100dvh] bg-[#0B0E14] text-slate-200 flex-col items-center justify-center p-4 relative animate-fade-in overflow-hidden">
+    <div className={`flex h-[100dvh] ${t.isLight ? 'bg-slate-50 text-slate-800' : 'bg-[#0B0E14] text-slate-200'} flex-col items-center justify-center p-4 relative animate-fade-in overflow-hidden`}>
       {/* Background elegant gradient elements */}
       <div className={`absolute top-1/4 left-1/4 w-96 h-96 bg-gradient-to-br ${t.bgLight} rounded-full blur-[100px] opacity-40 mix-blend-screen pointer-events-none ${t.glow}`}></div>
       <div className={`absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-gradient-to-tl ${t.bgLight} rounded-full blur-[120px] opacity-30 mix-blend-screen pointer-events-none`}></div>
 
-      <div className="w-full max-w-[420px] glass-panel rounded-[24px] p-10 z-10 animate-slide-up">
+      <div className={`w-full max-w-[420px] ${t.isLight ? 'bg-white shadow-xl border border-slate-200' : 'glass-panel'} rounded-[24px] p-10 z-10 animate-slide-up`}>
         <div className="text-center mb-10">
           <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${t.bgLight} border border-white/10 mx-auto flex items-center justify-center mb-6 shadow-xl`}>
             <ShieldCheck strokeWidth={1.5} className={`w-8 h-8 ${t.text}`} />
           </div>
           <h1 className={`text-3xl font-bold tracking-tight mb-2 ${t.title}`}>CommsLink</h1>
-          <p className="text-sm text-slate-400 font-medium tracking-wide">Secure Encrypted Network</p>
+          <p className={`text-sm ${t.isLight ? 'text-slate-500' : 'text-slate-400'} font-medium tracking-wide`}>Secure Encrypted Network</p>
         </div>
         <form onSubmit={handleAuth} className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+            <label className={`text-xs font-semibold ${t.isLight ? 'text-slate-500' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-2`}>
               <Fingerprint className={`w-3.5 h-3.5 ${t.text}`} /> Agent ID
             </label>
-            <input type="text" required value={agentId} onChange={(e) => setAgentId(e.target.value)} placeholder="e.g. Ghost47" className={`glass-input rounded-xl px-4 py-3.5 text-[15px] ${t.ring} w-full text-white placeholder-slate-500`} />
+            <input type="text" required value={agentId} onChange={(e) => setAgentId(e.target.value)} placeholder="e.g. Ghost47" className={`glass-input rounded-xl px-4 py-3.5 text-[15px] ${t.ring} w-full ${t.isLight ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400' : 'text-white placeholder-slate-500'}`} />
           </div>
           {!isLogin && (
             <div className="flex flex-col gap-2 animate-fade-in">
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <label className={`text-xs font-semibold ${t.isLight ? 'text-slate-500' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-2`}>
                 <User className={`w-3.5 h-3.5 ${t.text}`} /> Display Name
               </label>
-              <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="What others see..." className={`glass-input rounded-xl px-4 py-3.5 text-[15px] ${t.ring} w-full text-white placeholder-slate-500`} />
+              <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="What others see..." className={`glass-input rounded-xl px-4 py-3.5 text-[15px] ${t.ring} w-full ${t.isLight ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400' : 'text-white placeholder-slate-500'}`} />
             </div>
           )}
           <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+            <label className={`text-xs font-semibold ${t.isLight ? 'text-slate-500' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-2`}>
               <Key className={`w-3.5 h-3.5 ${t.text}`} /> Access Key
             </label>
-            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className={`glass-input rounded-xl px-4 py-3.5 text-[15px] ${t.ring} w-full text-white placeholder-slate-500 tracking-widest`} />
+            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className={`glass-input rounded-xl px-4 py-3.5 text-[15px] ${t.ring} w-full ${t.isLight ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400' : 'text-white placeholder-slate-500'} tracking-widest`} />
           </div>
           <button type="submit" disabled={loading} className={`mt-6 bg-gradient-to-r ${t.btnGrad} text-white font-semibold py-3.5 rounded-xl ${t.glow} flex justify-center items-center gap-2 transition-all hover:shadow-lg hover:-translate-y-0.5 active:scale-[0.98]`}>
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : isLogin ? "Initialize Link" : "Claim Agent ID"}
           </button>
         </form>
-        <p className="text-center text-sm text-slate-400 mt-8 cursor-pointer hover:text-white transition-colors" onClick={() => setIsLogin(!isLogin)}>
+        <p className={`text-center text-sm ${t.isLight ? 'text-slate-500 hover:text-slate-800' : 'text-slate-400 hover:text-white'} mt-8 cursor-pointer transition-colors`} onClick={() => setIsLogin(!isLogin)}>
           {isLogin ? "Need a new identity? Create one." : "Already registered? Login here."}
         </p>
       </div>
@@ -268,7 +272,7 @@ const MessageItem = ({ msg, index, isMine, isGroup, isConsecutive, repliedMsg, h
             </div>
           </div>
         ) : (
-          <div className={`p-2 msg-bubble relative max-w-full w-full ${borderRadius} ${msg.isDecrypted ? isMine ? `bg-gradient-to-br ${msg.expiresAt ? 'from-orange-600/40 to-red-600/30 border-orange-500/40 text-orange-50' : t.msgMine} border backdrop-blur-md` : 'glass-panel text-slate-200' : 'bg-red-900/30 border border-red-500/40 text-red-200 backdrop-blur-md'}`}>
+          <div className={`p-2 msg-bubble relative max-w-full w-full ${borderRadius} ${msg.isDecrypted ? isMine ? `bg-gradient-to-br ${msg.expiresAt ? 'from-orange-600/40 to-red-600/30 border-orange-500/40 text-orange-50' : t.msgMine} border ${t.isLight ? '' : 'backdrop-blur-md'}` : `${t.isLight ? 'bg-white shadow-sm border border-slate-200 text-slate-800' : 'glass-panel text-slate-200'} border` : `bg-red-900/30 border border-red-500/40 text-red-200 ${t.isLight ? '' : 'backdrop-blur-md'}`}`}>
             {repliedMsg && repliedMsg.isDecrypted && (
               <div className="mb-2 p-2 bg-black/30 rounded border-l-2 border-cyan-500/50 text-xs opacity-80 select-none overflow-hidden text-ellipsis">
                 <span className={`font-bold ${t.text}`}>{repliedMsg.senderName}</span>
@@ -812,7 +816,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const filteredMessages = searchQuery.trim() ? messages.filter(m => m.isDecrypted && m.type === 'text' && m.decryptedText?.toLowerCase().includes(searchQuery.toLowerCase())) : messages;
   const burnTimeOptions = [{ label: '1 Minute', val: 60000 }, { label: '5 Minutes', val: 300000 }, { label: '1 Hour', val: 3600000 }, { label: '24 Hours', val: 86400000 }];
   return (
-    <div className="flex-1 flex flex-col relative bg-[#050508] min-h-0 overflow-x-hidden" onClick={() => { setActiveMenu(null); setIsTimeDropdownOpen(false); setShowStickerPicker(false); }} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
+    <div className={`flex-1 flex flex-col relative ${t.isLight ? 'bg-slate-50' : 'bg-[#050508]'} min-h-0 overflow-x-hidden`} onClick={() => { setActiveMenu(null); setIsTimeDropdownOpen(false); setShowStickerPicker(false); }} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
       {/* Universal Audio/Video Anchor */}
       <video
         ref={remoteMediaRef}
@@ -917,7 +921,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           </div>
         </div>
       )}
-      <header className="glass-header px-5 py-3.5 flex items-center justify-between z-30 shrink-0 shadow-sm border-b border-white/5">
+      <header className={`${t.isLight ? 'bg-white border-b border-slate-200' : 'glass-header border-b border-white/5'} px-5 py-3.5 flex items-center justify-between z-30 shrink-0 shadow-sm`}>
         <div className="flex items-center gap-3 overflow-hidden">
           <button onClick={goBack} className="md:hidden p-2 -ml-2 text-slate-400 hover:text-white rounded-full hover:bg-white/10"><ChevronLeft className="w-6 h-6" /></button>
           <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${t.bgLight} border ${t.border} flex items-center justify-center ${t.glow} overflow-hidden shrink-0`}>
@@ -988,7 +992,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           {isUploading && uploadText ? (<div className={`flex-1 flex justify-between bg-black/50 border border-white/10 rounded-xl px-4 py-3 animate-pulse overflow-hidden`}><span className={`font-bold tracking-widest text-xs flex items-center gap-2 ${t.text} truncate`}><Loader2 className="w-4 h-4 animate-spin shrink-0" /> {uploadText}</span></div>) : isRecording ? (
             <div className="flex-1 flex justify-between bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 animate-pulse overflow-hidden"><span className="text-red-400 font-bold tracking-widest text-sm flex items-center gap-2 truncate"><div className="w-2 h-2 rounded-full bg-red-500 shrink-0"></div> REC</span><span className="text-red-400 font-bold">{Math.floor(recordingTime / 60)}:{recordingTime % 60 < 10 ? '0' : ''}{recordingTime % 60}</span></div>
           ) : (
-            <form onSubmit={handleSendText} className="flex-1 relative"><input type="text" value={inputText} onFocus={() => setShowStickerPicker(false)} onChange={handleTypingChange} placeholder={"Secure message..."} className={`w-full glass-input rounded-xl py-3 px-5 text-[15px] ${t.ring} focus:ring-1 outline-none transition-all placeholder:text-slate-500 text-white font-medium`} /></form>
+            <form onSubmit={handleSendText} className="flex-1 relative"><input type="text" value={inputText} onFocus={() => setShowStickerPicker(false)} onChange={handleTypingChange} placeholder={"Secure message..."} className={`w-full ${t.isLight ? 'bg-slate-100 text-slate-800 placeholder-slate-400 border-transparent' : 'glass-input text-white placeholder:text-slate-500'} rounded-xl py-3 px-5 text-[15px] ${t.ring} focus:ring-1 outline-none transition-all font-medium`} /></form>
           )}
           {isRecording ? (<button onClick={stopRecording} className="bg-red-600 hover:bg-red-500 p-3.5 rounded-xl text-white transition-colors shadow-lg shadow-red-500/20 shrink-0"><Square className="w-5 h-5 fill-current" /></button>) : (<button onClick={handleSendText} disabled={(!inputText.trim() && !isUploading) || isUploading} className={`bg-gradient-to-r ${t.sendBtn} p-3 rounded-xl text-white disabled:opacity-50 transition-all ${t.glow} hover:-translate-y-0.5 hover:shadow-lg active:scale-95 shrink-0`}><Send className="w-5 h-5 ml-0.5" /></button>)}
         </div>
@@ -1005,6 +1009,17 @@ export default function App() {
   const [showKeyModal, setShowKeyModal] = useState(false); const [showProfileModal, setShowProfileModal] = useState(false); const [targetThread, setTargetThread] = useState(null); const [tempKey, setTempKey] = useState('');
   const [connectMode, setConnectMode] = useState('agent'); const [searchAgentId, setSearchAgentId] = useState(''); const [groupNameInput, setGroupNameInput] = useState(''); const [isSearching, setIsSearching] = useState(false);
   const [editName, setEditName] = useState(''); const [isSavingProfile, setIsSavingProfile] = useState(false); const avatarInputRef = useRef(null); const [copiedId, setCopiedId] = useState(false);
+
+  const [showThemeMenu, setShowThemeMenu] = useState(false);
+  const themeMenuRef = useRef(null);
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (themeMenuRef.current && !themeMenuRef.current.contains(e.target)) setShowThemeMenu(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   useEffect(() => { const unsub = onAuthStateChanged(auth, async (u) => { setUser(u); if (u) await updateDoc(doc(db, 'users', u.uid), { lastSeen: Date.now() }).catch(() => { }); }); return () => unsub(); }, []);
   useEffect(() => { if (!user) return; const unsub = onSnapshot(collection(db, 'users'), (snapshot) => { const others = []; snapshot.forEach(doc => { if (doc.id === user.uid) { setCurrentUserData(doc.data()); if (!editName) setEditName(doc.data().displayName || ''); } else others.push(doc.data()); }); setUsersList(others); }); return () => unsub(); }, [user]);
   useEffect(() => { if (!user) return; const q = query(collection(db, 'chat_threads'), where('participants', 'array-contains', user.uid)); const unsub = onSnapshot(q, (snapshot) => { const threads = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); threads.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0)); setChatThreads(threads); }); return () => unsub(); }, [user]);
@@ -1013,7 +1028,6 @@ export default function App() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, [activeChat]);
-  const toggleTheme = () => { const modes = Object.keys(themeStyles); const nextMode = modes[(modes.indexOf(themeMode) + 1) % modes.length]; setThemeMode(nextMode); localStorage.setItem('commslink_theme', nextMode); };
   const handleLogout = () => { signOut(auth); setActiveChat(null); };
   const handleUpdateProfile = async (e) => { e.preventDefault(); if (!editName.trim()) return; setIsSavingProfile(true); try { await updateDoc(doc(db, 'users', user.uid), { displayName: editName }); await updateProfile(user, { displayName: editName }); setShowProfileModal(false); } catch (err) { alert("Failed to update profile."); } setIsSavingProfile(false); };
   const handleAvatarChange = async (e) => { const file = e.target.files[0]; if (!file) return; try { const b64 = await compressAvatar(file); await updateDoc(doc(db, 'users', user.uid), { avatarData: b64 }); } catch (err) { alert("Failed to update avatar."); } };
@@ -1053,7 +1067,7 @@ export default function App() {
 `;
   if (user === null) return <><style>{globalStyles}</style><AuthScreen t={t} /></>;
   return (
-    <div className="flex h-[100dvh] w-full bg-[#050508] text-slate-200 overflow-hidden font-sans">
+    <div className={`flex h-[100dvh] w-full ${t.isLight ? 'bg-slate-50 text-slate-800' : 'bg-[#050508] text-slate-200'} overflow-hidden font-sans`}>
       <style>{globalStyles}</style>
       {showProfileModal && (
         <div className="fixed inset-0 z-[100] bg-[#050508]/90 backdrop-blur-xl flex items-center justify-center p-4">
@@ -1088,24 +1102,38 @@ export default function App() {
           </div>
         </div>
       )}
-      <div className={`${activeChat ? 'hidden md:flex' : 'flex'} w-full md:w-[320px] lg:w-[380px] flex-col border-r border-white/5 z-20 shrink-0 bg-[#0B0E14]`}>
-        <header className="px-5 py-4 border-b border-white/5 shrink-0 flex justify-between items-center glass-header shadow-sm">
+      <div className={`${activeChat ? 'hidden md:flex' : 'flex'} w-full md:w-[320px] lg:w-[380px] flex-col border-r ${t.isLight ? 'border-slate-200 bg-white' : 'border-white/5 bg-[#0B0E14]'} z-20 shrink-0`}>
+        <header className={`px-5 py-4 border-b ${t.isLight ? 'border-slate-200 bg-white shadow-sm' : 'border-white/5 glass-header'} shrink-0 flex justify-between items-center shadow-sm`}>
           <div className="flex items-center gap-3">
             <button onClick={() => setShowProfileModal(true)} className={`w-10 h-10 rounded-full bg-gradient-to-br ${t.bgLight} border ${t.border} flex items-center justify-center ${t.glow} hover:scale-105 transition-all overflow-hidden shadow-lg cursor-pointer shrink-0`}>{currentUserData?.avatarData ? <img src={currentUserData.avatarData} className="w-full h-full object-cover" /> : <Settings className={`w-5 h-5 ${t.text}`} />}</button>
             <div className="flex flex-col"><h2 className={`font-mono text-lg font-bold ${t.title} truncate tracking-widest`}>CommsLink</h2></div>
           </div>
-          <div className="flex gap-1 shrink-0"><button onClick={toggleTheme} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5"><Palette className="w-4 h-4" /></button><button onClick={handleLogout} className="p-2 text-red-400 hover:text-red-300 rounded-lg hover:bg-white/5"><LogOut className="w-4 h-4" /></button></div>
+          <div className="flex gap-1 shrink-0">
+            <div className="relative" ref={themeMenuRef}>
+              <button onClick={() => setShowThemeMenu(!showThemeMenu)} className={`p-2 ${t.isLight ? 'text-slate-500 hover:text-slate-800 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-white/5'} rounded-lg`}><Palette className="w-4 h-4" /></button>
+              {showThemeMenu && (
+                <div className={`absolute right-0 top-full mt-2 w-48 ${t.isLight ? 'bg-white border-slate-200 shadow-xl' : 'bg-[#1a1a24] border-white/10 shadow-2xl'} border rounded-xl overflow-y-auto max-h-64 custom-scrollbar z-[200] animate-fade-in py-2`}>
+                  {Object.entries(themeStyles).map(([key, theme]) => (
+                    <button key={key} onClick={() => { setThemeMode(key); localStorage.setItem('commslink_theme', key); setShowThemeMenu(false); }} className={`w-full text-left px-4 py-2 text-sm transition-colors ${themeMode === key ? (t.isLight ? 'bg-slate-100 font-bold ' + theme.text : 'bg-white/10 font-bold ' + theme.text) : (t.isLight ? 'text-slate-600 hover:bg-slate-50' : 'text-slate-300 hover:bg-white/5')}`}>
+                      {theme.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={handleLogout} className="p-2 text-red-400 hover:text-red-300 rounded-lg hover:bg-white/5"><LogOut className="w-4 h-4" /></button>
+          </div>
         </header>
         <div className="p-5 border-b border-white/5 shrink-0 bg-transparent">
-          <div className="flex gap-1 mb-4 bg-black/30 p-1 rounded-[10px] border border-white/5"><button onClick={() => setConnectMode('agent')} className={`flex-1 py-1.5 text-xs font-bold rounded-[8px] transition-all ${connectMode === 'agent' ? t.activeTab : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}>Agent Link</button><button onClick={() => setConnectMode('group')} className={`flex-1 py-1.5 text-xs font-bold rounded-[8px] transition-all ${connectMode === 'group' ? t.activeTab : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}>Servers</button></div>
+          <div className={`flex gap-1 mb-4 ${t.isLight ? 'bg-slate-100 border-slate-200' : 'bg-black/30 border-white/5'} p-1 rounded-[10px] border`}><button onClick={() => setConnectMode('agent')} className={`flex-1 py-1.5 text-xs font-bold rounded-[8px] transition-all ${connectMode === 'agent' ? t.activeTab : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}>Agent Link</button><button onClick={() => setConnectMode('group')} className={`flex-1 py-1.5 text-xs font-bold rounded-[8px] transition-all ${connectMode === 'group' ? t.activeTab : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}>Servers</button></div>
           {connectMode === 'agent' ? (
             <form onSubmit={handleSearchAndCreateChat} className="flex gap-2 animate-fade-in">
-              <div className="relative flex-1 group"><div className={`absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:${t.text}`}><Search className="w-4 h-4" /></div><input type="text" value={searchAgentId} onChange={(e) => setSearchAgentId(e.target.value)} placeholder="Search Agent ID..." className={`w-full glass-input rounded-xl py-2.5 pl-10 pr-3 text-[14px] ${t.ring} focus:ring-1 outline-none transition-all placeholder:text-slate-500 text-white font-medium`} /></div>
+              <div className="relative flex-1 group"><div className={`absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:${t.text}`}><Search className="w-4 h-4" /></div><input type="text" value={searchAgentId} onChange={(e) => setSearchAgentId(e.target.value)} placeholder="Search Agent ID..." className={`w-full ${t.isLight ? 'bg-white border text-slate-800 border-slate-200 placeholder-slate-400' : 'glass-input text-white placeholder:text-slate-500'} rounded-xl py-2.5 pl-10 pr-3 text-[14px] ${t.ring} focus:ring-1 outline-none transition-all font-medium`} /></div>
               <button type="submit" disabled={isSearching || !searchAgentId.trim()} className={`bg-gradient-to-r ${t.sendBtn} text-white px-3.5 rounded-xl disabled:opacity-50 shrink-0 ${t.glow} hover:-translate-y-0.5 active:scale-95 transition-all`}><Plus className="w-4 h-4" /></button>
             </form>
           ) : (
             <form onSubmit={handleGroupJoin} className="flex flex-col gap-2">
-              <div className="relative group flex items-center"><input type="text" value={groupNameInput} onChange={(e) => setGroupNameInput(e.target.value)} placeholder="Server Name..." className={`w-full bg-black/50 border border-white/10 rounded-lg py-2 pl-3 pr-8 text-sm ${t.ring} focus:ring-1 outline-none transition-all`} /><button type="button" onClick={generateRandomGroup} className="absolute right-2 p-1 text-slate-500 hover:text-white" title="Random Server"><RefreshCw className="w-3 h-3" /></button></div>
+              <div className="relative group flex items-center"><input type="text" value={groupNameInput} onChange={(e) => setGroupNameInput(e.target.value)} placeholder="Server Name..." className={`w-full ${t.isLight ? 'bg-white border text-slate-800 border-slate-200' : 'bg-black/50 border border-white/10 text-white'} rounded-lg py-2 pl-3 pr-8 text-sm ${t.ring} focus:ring-1 outline-none transition-all`} /><button type="button" onClick={generateRandomGroup} className="absolute right-2 p-1 text-slate-500 hover:text-white" title="Random Server"><RefreshCw className="w-3 h-3" /></button></div>
               <button type="submit" disabled={isSearching || !groupNameInput.trim()} className={`w-full bg-gradient-to-r ${t.sendBtn} py-2 text-white text-sm font-bold rounded-lg disabled:opacity-50 shrink-0`}>Create / Join Server</button>
             </form>
           )}
@@ -1123,16 +1151,16 @@ export default function App() {
               }
               const hasLocalKey = !!JSON.parse(localStorage.getItem('commslink_keys') || '{}')[thread.id]; const isActive = activeChat?.id === thread.id;
               return (
-                <button key={thread.id} onClick={() => triggerChatEntry(thread)} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all group text-left ${isActive ? 'bg-white/10 border border-white/5' : 'bg-transparent hover:bg-white/5 border border-transparent'}`}>
-                  <div className={`w-11 h-11 rounded-full relative bg-black/50 border ${isActive ? t.border : 'border-white/10'} flex items-center justify-center shrink-0 overflow-hidden`}>{isGroup ? <Users className={`w-4 h-4 ${isActive ? t.text : 'text-slate-400'}`} /> : (chatAvatar ? <img src={chatAvatar} className="w-full h-full object-cover" /> : <User className={`w-4 h-4 ${isActive ? t.text : 'text-slate-400'}`} />)}{isOnline && !isGroup && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-[#0a0a0f] rounded-full shadow-[0_0_5px_rgba(34,197,94,0.5)]"></div>}</div>
-                  <div className="flex-1 overflow-hidden"><h4 className={`font-bold truncate text-sm ${isActive ? 'text-white' : 'text-slate-300'}`}>{chatName}</h4><p className={`text-[10px] truncate flex items-center gap-1 mt-0.5 ${hasLocalKey ? 'text-green-500/70' : 'text-amber-500/70'}`}>{hasLocalKey ? <Unlock className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />} {hasLocalKey ? 'Cached' : 'Locked'}</p></div>
+                <button key={thread.id} onClick={() => triggerChatEntry(thread)} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all group text-left ${isActive ? (t.isLight ? 'bg-slate-100 border border-slate-200' : 'bg-white/10 border border-white/5') : (t.isLight ? 'bg-transparent hover:bg-slate-100 border border-transparent' : 'bg-transparent hover:bg-white/5 border border-transparent')}`}>
+                  <div className={`w-11 h-11 rounded-full relative ${t.isLight ? 'bg-slate-200' : 'bg-black/50'} border ${isActive ? t.border : (t.isLight ? 'border-slate-300' : 'border-white/10')} flex items-center justify-center shrink-0 overflow-hidden`}>{isGroup ? <Users className={`w-4 h-4 ${isActive ? t.text : 'text-slate-400'}`} /> : (chatAvatar ? <img src={chatAvatar} className="w-full h-full object-cover" /> : <User className={`w-4 h-4 ${isActive ? t.text : 'text-slate-400'}`} />)}{isOnline && !isGroup && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-[#0a0a0f] rounded-full shadow-[0_0_5px_rgba(34,197,94,0.5)]"></div>}</div>
+                  <div className="flex-1 overflow-hidden"><h4 className={`font-bold truncate text-sm ${isActive ? (t.isLight ? 'text-slate-900' : 'text-white') : (t.isLight ? 'text-slate-600' : 'text-slate-300')}`}>{chatName}</h4><p className={`text-[10px] truncate flex items-center gap-1 mt-0.5 ${hasLocalKey ? 'text-green-500/70' : 'text-amber-500/70'}`}>{hasLocalKey ? <Unlock className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />} {hasLocalKey ? 'Cached' : 'Locked'}</p></div>
                 </button>
               );
             })
           )}
         </div>
       </div>
-      <div className={`${!activeChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col relative bg-[#050508] min-h-0`}>
+      <div className={`${!activeChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col relative ${t.isLight ? 'bg-slate-50' : 'bg-[#050508]'} min-h-0`}>
         {activeChat ? (<ChatInterface user={user} usersList={usersList} threadId={activeChat.id} chatData={chatThreads.find(th => th.id === activeChat.id) || activeChat} encryptionKeys={encryptionKeys} changeKey={handleChangeKey} goBack={() => { try { window.history.back(); } catch (e) { setActiveChat(null); } }} deleteChat={handleDeleteChat} t={t} themeMode={themeMode} />) : (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-500/40 relative">
             <div className="absolute inset-0 bg-center bg-no-repeat bg-contain opacity-5" style={{ backgroundImage: "url('data:image/svg+xml;utf8,<svg width=\"100\" height=\"100\" viewBox=\"0 0 100 100\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M50 20L80 40V70L50 90L20 70V40L50 20Z\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>')" }}></div>
