@@ -490,7 +490,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       const oldCandidates = await getDocs(collection(db, 'chat_threads', threadId, 'call_candidates'));
       await Promise.all(oldCandidates.docs.map(c => deleteDoc(c.ref).catch(() => { })));
 
-      const constraints = isVideo ? { audio: true, video: { facingMode: 'user', width: 640, height: 480 } } : { audio: true };
+      const constraints = isVideo ? { audio: true, video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } } : { audio: true };
       const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
       const { processedStream, audioCtx, canvasInterval } = await setupMaskedMedia(rawStream, videoMode, useAudioMask);
       audioContextRef.current = audioCtx;
@@ -511,6 +511,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   };
 
   const answerCall = async () => {
+    if (callStateRef.current !== 'ringing') return; // Prevent double execution
+    updateCallState('connecting');
     // BUG FIX: Do NOT reset pendingCandidates here — the ICE listener has been
     // queuing the caller's candidates since 'ringing' state. Resetting loses them.
     peerConnection.current = new RTCPeerConnection(iceServers);
@@ -549,7 +551,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     try {
       const callDoc = await getDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'));
       const callData = callDoc.data();
-      const constraints = callData.isVideo ? { audio: true, video: { facingMode: 'user', width: 640, height: 480 } } : { audio: true };
+      // Loosen strict width/height to avoid OverconstrainedError on non-standard webcams
+      const constraints = callData.isVideo ? { audio: true, video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } } : { audio: true };
       const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
       // videoMode stored by caller is already correct ('raw'/'blur'/'jam')
       const { processedStream, audioCtx, canvasInterval } = await setupMaskedMedia(rawStream, callData.videoMode || 'raw', false);
@@ -575,6 +578,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       setConnectionError(null);
     } catch (err) {
       console.error('Answer Call Error:', err);
+      try { await updateDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), { status: 'ended' }); } catch (e) { }
       alert(`Failed to answer: ${err.message}`);
       endCallLocally();
     }
@@ -796,10 +800,10 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           <button onClick={() => updateCallState('idle')} className="py-3 px-6 rounded-lg text-slate-500 hover:text-white font-bold hover:bg-white/5 transition-all">Cancel Request</button>
         </div>
       )}
-      {callState === 'calling' && (
+      {(callState === 'calling' || callState === 'connecting') && (
         <div className="absolute inset-0 z-[500] bg-[#0a0a0f] flex flex-col items-center justify-center p-6 animate-fade-in">
           <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-pulse`}>{isVideoEnabled ? <Video className={`w-10 h-10 ${t.text}`} /> : <PhoneCall className={`w-10 h-10 ${t.text}`} />}</div>
-          <h2 className="text-xl font-bold text-white mb-2">Establishing Uplink...</h2>
+          <h2 className="text-xl font-bold text-white mb-2">{callState === 'calling' ? 'Establishing Uplink...' : 'Securing Uplink...'}</h2>
           <p className="text-xs text-slate-500 mb-12">P2P Handshake initiated</p>
           {connectionError && <div className="text-red-400 mb-4 flex items-center gap-2"><AlertCircle className="w-4 h-4" /> {connectionError}</div>}
           <button onClick={endCall} className="w-16 h-16 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-6 h-6 text-white" /></button>
