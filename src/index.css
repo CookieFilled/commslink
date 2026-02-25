@@ -1,1 +1,435 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
+
+/* =====================================================
+   COMMSLINK — PREMIUM DESIGN SYSTEM
+   ===================================================== */
+
+:root {
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Brand Colors */
+  --brand-primary: #6366f1;
+  --brand-secondary: #8b5cf6;
+  --brand-accent: #06b6d4;
+  --brand-glow: rgba(99, 102, 241, 0.35);
+
+  /* Dark Mode Surfaces */
+  --surface-0: #07080d;
+  --surface-1: #0d0e15;
+  --surface-2: #12131e;
+  --surface-3: #1a1b28;
+  --surface-4: #22243a;
+  --surface-border: rgba(255, 255, 255, 0.07);
+  --surface-border-hover: rgba(255, 255, 255, 0.12);
+
+  /* Light Mode Surfaces */
+  --light-0: #f8f9fc;
+  --light-1: #ffffff;
+  --light-2: #f1f3f9;
+  --light-3: #e8eaf4;
+  --light-border: rgba(0, 0, 0, 0.07);
+
+  /* Glow Effects */
+  --glow-primary: 0 0 40px rgba(99, 102, 241, 0.2);
+  --glow-green: 0 0 30px rgba(34, 197, 94, 0.3);
+  --glow-red: 0 0 30px rgba(239, 68, 68, 0.35);
+
+  /* Transitions */
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-bounce: 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: var(--font-main);
+}
+
+/* ===== SCROLLBARS ===== */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 10px;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ===== GLASSMORPHISM UTILITIES ===== */
+.glass-dark {
+  background: rgba(13, 14, 21, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.glass-light {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.glass-picker {
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+/* ===== SAFE AREA BOTTOM ===== */
+.pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom, 12px), 12px);
+}
+
+/* ===== ANIMATIONS ===== */
+
+/* Pop In */
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.85) translateY(8px);
+  }
+
+  70% {
+    transform: scale(1.02) translateY(-2px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-pop-in {
+  animation: popIn 0.28s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+
+/* Fade In */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out both;
+}
+
+/* Slide Up */
+@keyframes slideUp {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.22s ease-out both;
+}
+
+/* Bouncy Slide Up */
+@keyframes bouncySlideUp {
+  0% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+
+  65% {
+    transform: translateY(-4%);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-bouncy-slide-up {
+  animation: bouncySlideUp 0.38s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+
+/* Slide In From Left */
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* Slide In From Right */
+@keyframes slideInRight {
+  from {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* Vanish (Burn message) */
+.vanishing {
+  animation: vanish 0.65s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+
+@keyframes vanish {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    max-height: 500px;
+    margin-bottom: 1rem;
+  }
+
+  40% {
+    opacity: 0;
+    transform: scale(0.93) translateY(-12px);
+    max-height: 500px;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(0.93) translateY(-12px);
+    max-height: 0;
+    margin-bottom: 0;
+    padding: 0;
+    border: none;
+    overflow: hidden;
+  }
+}
+
+/* Pulse Ring (for call effects) */
+@keyframes pulseRing {
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+
+  50% {
+    transform: scale(1.12);
+    opacity: 0.1;
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulseRing 1.8s ease-in-out infinite;
+}
+
+/* Typing Dot Bounce */
+@keyframes typingBounce {
+
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+
+  30% {
+    transform: translateY(-5px);
+  }
+}
+
+.typing-dot-1 {
+  animation: typingBounce 1.2s ease-in-out infinite;
+  animation-delay: 0s;
+}
+
+.typing-dot-2 {
+  animation: typingBounce 1.2s ease-in-out infinite;
+  animation-delay: 0.15s;
+}
+
+.typing-dot-3 {
+  animation: typingBounce 1.2s ease-in-out infinite;
+  animation-delay: 0.3s;
+}
+
+/* Auth Background orbs */
+@keyframes floatOrb1 {
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate(30px, -20px) scale(1.08);
+  }
+}
+
+@keyframes floatOrb2 {
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate(-25px, 30px) scale(1.05);
+  }
+}
+
+@keyframes floatOrb3 {
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate(20px, 15px) scale(1.1);
+  }
+}
+
+.orb-1 {
+  animation: floatOrb1 8s ease-in-out infinite;
+}
+
+.orb-2 {
+  animation: floatOrb2 10s ease-in-out infinite;
+}
+
+.orb-3 {
+  animation: floatOrb3 7s ease-in-out infinite;
+}
+
+/* Shimmer */
+@keyframes shimmer {
+  0% {
+    background-position: -200% center;
+  }
+
+  100% {
+    background-position: 200% center;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.06) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+/* Input float label */
+.input-group {
+  position: relative;
+}
+
+.input-group input:focus {
+  outline: none;
+}
+
+/* Message transition */
+.msg-enter {
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+}
+
+.msg-enter-active {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Gradient text utility */
+.gradient-text {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6, #06b6d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Channel item hover glow */
+.channel-item-active {
+  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.3), 0 2px 12px rgba(99, 102, 241, 0.08);
+}
+
+/* Call ring animation */
+@keyframes callRingExpand {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.call-ring {
+  animation: callRingExpand 2s ease-out infinite;
+}
+
+.call-ring-delay {
+  animation: callRingExpand 2s ease-out infinite 0.7s;
+}
+
+.call-ring-delay2 {
+  animation: callRingExpand 2s ease-out infinite 1.4s;
+}
+
+/* Smooth resize for message bubbles */
+.bubble-transition {
+  transition: all var(--transition-smooth);
+}
+
+/* Input focus ring */
+.focus-ring:focus {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.5) !important;
+}
