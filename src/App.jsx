@@ -8,8 +8,7 @@ import {
   Palette, Reply, X, Smile, Mic, Square, Play, Pause,
   ChevronLeft, Fingerprint, Search, Plus, Trash2, Settings,
   Camera, PenLine, RefreshCw, Copy, Paperclip, CheckCheck, Flame, Clock, ChevronDown, Image as ImageIcon,
-  ArrowDown, Sticker, Edit2, Phone, PhoneCall, PhoneOff, MicOff, Volume2, Video, VideoOff, AlertCircle,
-  FileText, Download
+  ArrowDown, Sticker, Edit2, Phone, PhoneCall, PhoneOff, MicOff, Volume2, Video, VideoOff, AlertCircle
 } from 'lucide-react';
 
 // --- Firebase Initialization ---
@@ -203,9 +202,8 @@ const MessageItem = ({ msg, index, isMine, isGroup, isConsecutive, repliedMsg, h
         onTouchMove={() => clearTimeout(activeTouch.current.timer)}
         onTouchEnd={e => { clearTimeout(activeTouch.current.timer); if (!activeTouch.current.isLongPress && e.changedTouches[0].clientX - activeTouch.current.startX > 60) setReplyingTo(msg); }}
       >
-        <div className={`hidden md:flex absolute top-1/2 -translate-y-1/2 ${isMine ? 'right-full pr-3' : 'left-full pl-3'} items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none group-hover:pointer-events-auto z-10`}>
-          <button onClick={(e) => { e.stopPropagation(); setReplyingTo(msg); setActiveMenu(null); }} title="Reply" className={`p-2 bg-[#1a1a24] border border-white/10 text-slate-300 hover:${t.text} rounded-full hover:bg-white/10 shadow-lg transition-colors`}><Reply className="w-4 h-4" /></button>
-          <button onClick={(e) => { e.stopPropagation(); setActiveMenu(msg.id === activeMenu ? null : msg.id); }} title="React" className={`p-2 bg-[#1a1a24] border border-white/10 ${t.text} rounded-full hover:bg-white/10 shadow-lg`}><Smile className="w-4 h-4" /></button>
+        <div className={`hidden md:flex absolute top-1/2 -translate-y-1/2 ${isMine ? 'right-full pr-3' : 'left-full pl-3'} items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none group-hover:pointer-events-auto z-10`}>
+          <button onClick={(e) => { e.stopPropagation(); setActiveMenu(msg.id === activeMenu ? null : msg.id); }} className={`p-2 bg-[#1a1a24] border border-white/10 ${t.text} rounded-full hover:bg-white/10 shadow-lg`}><Smile className="w-4 h-4" /></button>
         </div>
         {activeMenu === msg.id && (
           <div className={`absolute ${isMine ? 'right-0' : 'left-0'} ${index < 3 ? 'top-full mt-2' : 'bottom-full mb-2'} bg-[#1a1a24]/95 border border-white/10 rounded-2xl p-3 z-[300] w-[270px] shadow-2xl glass-picker animate-pop-in`} onClick={e => e.stopPropagation()}>
@@ -247,36 +245,16 @@ const MessageItem = ({ msg, index, isMine, isGroup, isConsecutive, repliedMsg, h
                 msg.type === 'video' ? (<video controls src={msg.decryptedText} className="max-w-full rounded-xl shadow-md border border-white/10 object-contain" style={{ maxHeight: '350px' }} />) :
                   msg.type === 'video_loading' ? (<div className="px-4 py-3 flex flex-col gap-2 min-w-[200px]"><div className={`flex items-center gap-2 font-bold mb-1 border-b border-white/10 pb-2 text-xs ${t.text}`}><Loader2 className="w-3.5 h-3.5 animate-spin" /> ASSEMBLING...</div><div className="w-full bg-black/50 h-1.5 rounded-full overflow-hidden"><div className={`h-full bg-gradient-to-r ${t.sendBtn} transition-all`} style={{ width: `${(msg.progress / msg.total) * 100}%` }}></div></div><span className="opacity-50 text-[10px] text-right">Packets: {msg.progress} / {msg.total}</span></div>) :
                     msg.type === 'audio' ? (<CustomAudioPlayer src={msg.decryptedText} t={t} />) :
-                      msg.type === 'document' ? (
-                        <div className="px-3 py-3 flex items-center gap-3 min-w-[210px] max-w-[280px]">
-                          <div className={`shrink-0 w-10 h-10 rounded-xl ${t.bgLight} border ${t.border} flex items-center justify-center`}>
-                            <FileText className={`w-5 h-5 ${t.text}`} />
-                          </div>
-                          <div className="flex-1 overflow-hidden">
-                            <p className="text-xs font-bold text-white truncate">{msg.fileName || 'Document'}</p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">{msg.fileSize ? `${(msg.fileSize / 1024).toFixed(1)} KB` : 'Encrypted'} · Secure</p>
-                          </div>
-                          <a
-                            href={msg.decryptedText}
-                            download={msg.fileName || 'document'}
-                            onClick={e => e.stopPropagation()}
-                            className={`shrink-0 p-2 rounded-lg ${t.bgLight} ${t.text} hover:opacity-80 transition-opacity`}
-                            title="Download"
-                          >
-                            <Download className="w-4 h-4" />
-                          </a>
+                      (
+                        <div className="px-3 py-2 text-[15px] whitespace-pre-wrap break-words overflow-wrap-anywhere leading-relaxed">
+                          <div dangerouslySetInnerHTML={parseMarkdown(msg.decryptedText)}></div>
+                          {ytIds.length > 0 && ytIds.map(id => (
+                            <div key={id} className="mt-3 w-full rounded-xl overflow-hidden border border-white/10 bg-black/50 aspect-video">
+                              <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${id}`} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
+                            </div>
+                          ))}
                         </div>
-                      ) :
-                        (
-                          <div className="px-3 py-2 text-[15px] whitespace-pre-wrap break-words overflow-wrap-anywhere leading-relaxed">
-                            <div dangerouslySetInnerHTML={parseMarkdown(msg.decryptedText)}></div>
-                            {ytIds.length > 0 && ytIds.map(id => (
-                              <div key={id} className="mt-3 w-full rounded-xl overflow-hidden border border-white/10 bg-black/50 aspect-video">
-                                <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${id}`} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
-                              </div>
-                            ))}
-                          </div>
-                        )
+                      )
             ) : (<div className="px-4 py-3 text-xs opacity-50"><Lock className="w-3.5 h-3.5 inline mr-1" /> BLOCKED/INVALID KEY</div>)}
             <div className={`flex items-center justify-end gap-1 mt-1 px-1 opacity-70`}>
               <span className="text-[9px] font-mono tracking-wider text-slate-300">{msgTime} {msg.isEdited && <span className="italic opacity-60 ml-0.5">(edited)</span>}</span>
@@ -320,11 +298,9 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
   const [isLocalVideoOff, setIsLocalVideoOff] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
-  const [callMode, setCallMode] = useState('audio_raw');
 
   // Hardware-Safe DOM Hooks
   const remoteMediaRef = useRef(null);
-  const remoteAudioRef = useRef(null); // Separate audio-only element — prevents echo feedback loop
   const localVideoRef = useRef(null);
   const remoteStreamRef = useRef(null);
   const peerConnection = useRef(null);
@@ -375,13 +351,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   // Safely mount streams to the DOM when connection opens
   useEffect(() => {
     if (callState === 'connected') {
-      // Video element is always muted — only used for visual display of remote video track.
-      // Audio is played via remoteAudioRef to prevent speaker-to-mic echo feedback loop.
       if (remoteMediaRef.current && remoteStreamRef.current && remoteMediaRef.current.srcObject !== remoteStreamRef.current) {
         remoteMediaRef.current.srcObject = remoteStreamRef.current;
-      }
-      if (remoteAudioRef.current && remoteStreamRef.current && remoteAudioRef.current.srcObject !== remoteStreamRef.current) {
-        remoteAudioRef.current.srcObject = remoteStreamRef.current;
       }
       if (localVideoRef.current && localStreamRef.current && localVideoRef.current.srcObject !== localStreamRef.current) {
         localVideoRef.current.srcObject = localStreamRef.current;
@@ -400,7 +371,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
 
       if (data.status === 'ringing' && data.callerId !== user.uid && currentState === 'idle') {
         setIsVideoEnabled(data.isVideo || false);
-        setCallMode(data.callMode || 'audio_raw');
         updateCallState('ringing');
       } else if (data.status === 'answered' && data.callerId === user.uid && peerConnection.current) {
         if (peerConnection.current.signalingState === "have-local-offer") {
@@ -466,7 +436,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     // Correctly extract the video processing mode (only meaningful for video calls)
     const videoMode = isVideo ? mode.replace('video_', '') : 'raw';
     setIsVideoEnabled(isVideo);
-    setCallMode(mode);
     updateCallState('calling');
     setConnectionError(null);
     pendingCandidates.current = []; // Reset queue
@@ -504,10 +473,6 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       if (remoteMediaRef.current) {
         remoteMediaRef.current.srcObject = event.streams[0];
       }
-      // Pipe audio to the dedicated audio element (not the video element) to prevent echo feedback
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = event.streams[0];
-      }
     };
 
     // Call Timeout (30s)
@@ -525,8 +490,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       const oldCandidates = await getDocs(collection(db, 'chat_threads', threadId, 'call_candidates'));
       await Promise.all(oldCandidates.docs.map(c => deleteDoc(c.ref).catch(() => { })));
 
-      const audioConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-      const constraints = isVideo ? { audio: audioConstraints, video: { facingMode: 'user', width: 640, height: 480 } } : { audio: audioConstraints };
+      const constraints = isVideo ? { audio: true, video: { facingMode: 'user', width: 640, height: 480 } } : { audio: true };
       const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
       const { processedStream, audioCtx, canvasInterval } = await setupMaskedMedia(rawStream, videoMode, useAudioMask);
       audioContextRef.current = audioCtx;
@@ -537,7 +501,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       await peerConnection.current.setLocalDescription(offer);
       await setDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'), {
         status: 'ringing', callerId: user.uid, offer: { type: offer.type, sdp: offer.sdp },
-        isVideo: isVideo, videoMode: videoMode, callMode: mode, timestamp: Date.now()
+        isVideo: isVideo, videoMode: videoMode, timestamp: Date.now()
       });
     } catch (err) {
       console.error('Call Setup Error:', err);
@@ -580,17 +544,12 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       if (remoteMediaRef.current) {
         remoteMediaRef.current.srcObject = event.streams[0];
       }
-      // Pipe audio to the dedicated audio element (not the video element) to prevent echo feedback
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = event.streams[0];
-      }
     };
 
     try {
       const callDoc = await getDoc(doc(db, 'chat_threads', threadId, 'call_signal', 'data'));
       const callData = callDoc.data();
-      const audioConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-      const constraints = callData.isVideo ? { audio: audioConstraints, video: { facingMode: 'user', width: 640, height: 480 } } : { audio: audioConstraints };
+      const constraints = callData.isVideo ? { audio: true, video: { facingMode: 'user', width: 640, height: 480 } } : { audio: true };
       const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
       // videoMode stored by caller is already correct ('raw'/'blur'/'jam')
       const { processedStream, audioCtx, canvasInterval } = await setupMaskedMedia(rawStream, callData.videoMode || 'raw', false);
@@ -648,9 +607,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
     pendingCandidates.current = [];
     remoteStreamRef.current = null;
     if (remoteMediaRef.current) remoteMediaRef.current.srcObject = null;
-    if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
-    setCallDuration(0); callDurationRef.current = 0; setIsMuted(false); setIsVideoEnabled(false); setIsLocalVideoOff(false); setCallMode('audio_raw');
+    setCallDuration(0); callDurationRef.current = 0; setIsMuted(false); setIsVideoEnabled(false); setIsLocalVideoOff(false);
     updateCallState('idle');
     setConnectionError(null);
   };
@@ -705,12 +663,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       const now = Date.now(); const validRaw = [];
       raw.forEach(msg => { if (msg.expiresAt && msg.expiresAt <= now) deleteDoc(doc(db, 'chat_threads', threadId, 'messages', msg.id)).catch(() => { }); else validRaw.push(msg); });
       validRaw.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-      const videoGroups = {}; const docGroups = {}; const normalMessages = [];
-      validRaw.forEach(msg => {
-        if (msg.type === 'video_chunk') { if (!videoGroups[msg.videoGroupId]) videoGroups[msg.videoGroupId] = []; videoGroups[msg.videoGroupId].push(msg); }
-        else if (msg.type === 'doc_chunk') { if (!docGroups[msg.docGroupId]) docGroups[msg.docGroupId] = []; docGroups[msg.docGroupId].push(msg); }
-        else normalMessages.push(msg);
-      });
+      const videoGroups = {}; const normalMessages = [];
+      validRaw.forEach(msg => { if (msg.type === 'video_chunk') { if (!videoGroups[msg.videoGroupId]) videoGroups[msg.videoGroupId] = []; videoGroups[msg.videoGroupId].push(msg); } else normalMessages.push(msg); });
       const assembledVideos = [];
       for (const [groupId, chunks] of Object.entries(videoGroups)) {
         const total = chunks[0].totalChunks;
@@ -720,16 +674,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           assembledVideos.push({ id: groupId, senderId: chunks[0].senderId, senderName: chunks[0].senderName, type: 'video', text: fullEncText, timestamp: chunks[0].timestamp, replyToId: chunks[0].replyToId, reactions: chunks[0].reactions || {}, expiresAt: chunks[0].expiresAt });
         } else { assembledVideos.push({ id: groupId, senderId: chunks[0].senderId, senderName: chunks[0].senderName, type: 'video_loading', progress: chunks.length, total: total, timestamp: chunks[0].timestamp }); }
       }
-      const assembledDocs = [];
-      for (const [groupId, chunks] of Object.entries(docGroups)) {
-        const total = chunks[0].totalChunks;
-        if (chunks.length === total) {
-          chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
-          const fullEncText = chunks.map(c => c.text).join('');
-          assembledDocs.push({ id: groupId, senderId: chunks[0].senderId, senderName: chunks[0].senderName, type: 'document', text: fullEncText, fileName: chunks[0].fileName, fileSize: chunks[0].fileSize, timestamp: chunks[0].timestamp, replyToId: chunks[0].replyToId, reactions: chunks[0].reactions || {}, expiresAt: chunks[0].expiresAt });
-        } else { assembledDocs.push({ id: groupId, senderId: chunks[0].senderId, senderName: chunks[0].senderName, type: 'video_loading', progress: chunks.length, total: total, timestamp: chunks[0].timestamp, fileName: chunks[0].fileName }); }
-      }
-      const combinedRaw = [...normalMessages, ...assembledVideos, ...assembledDocs].sort((a, b) => a.timestamp - b.timestamp);
+      const combinedRaw = [...normalMessages, ...assembledVideos].sort((a, b) => a.timestamp - b.timestamp);
       const processed = await Promise.all(combinedRaw.map(async (msg) => {
         if (msg.type === 'video_loading') return { ...msg, isDecrypted: true };
         if (decryptionCache.current[msg.id] && msg.isEdited && decryptionCache.current[`${msg.id}_edited`] !== msg.text) delete decryptionCache.current[msg.id];
@@ -789,29 +734,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         setUploadText("Compressing..."); const b64 = await compressImage(file); const enc = await encryptText(b64, activeKey);
         await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: enc, type: 'image', timestamp: Date.now(), replyToId: replyId, reactions: {}, expiresAt: expiryTimestamp });
         await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() }); await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() });
-      } else {
-        // Generic document handler (PDF, DOCX, XLSX, ZIP, etc.)
-        if (file.size > 20 * 1024 * 1024) { alert("Max document size is 20MB."); setIsUploading(false); return; }
-        setUploadText("Reading document...");
-        const base64Doc = await blobToBase64(file);
-        setUploadText("Encrypting document...");
-        const encDoc = await encryptText(base64Doc, activeKey);
-        // Split into chunks if large (same chunking strategy as video)
-        const CHUNK_SIZE = 700000;
-        if (encDoc.length > CHUNK_SIZE) {
-          const totalChunks = Math.ceil(encDoc.length / CHUNK_SIZE);
-          const docGroupId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
-          for (let i = 0; i < totalChunks; i++) {
-            setUploadText(`Encrypting... packet ${i + 1}/${totalChunks}`);
-            const chunkText = encDoc.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-            await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, type: 'doc_chunk', docGroupId, chunkIndex: i, totalChunks, text: chunkText, fileName: file.name, fileSize: file.size, timestamp: Date.now() + i, replyToId: replyId, reactions: {}, expiresAt: expiryTimestamp });
-          }
-        } else {
-          await addDoc(collection(db, 'chat_threads', threadId, 'messages'), { senderId: user.uid, senderName: user.displayName, text: encDoc, type: 'document', fileName: file.name, fileSize: file.size, timestamp: Date.now(), replyToId: replyId, reactions: {}, expiresAt: expiryTimestamp });
-        }
-        await updateDoc(doc(db, 'chat_threads', threadId), { lastActivity: Date.now() }); await updateDoc(doc(db, 'users', user.uid), { lastSeen: Date.now() });
       }
-    } catch (err) { console.error(err); alert("Failed to send file."); } finally { setIsUploading(false); setUploadText(''); scrollToBottom(); }
+    } catch (err) { alert("Failed to send media."); } finally { setIsUploading(false); setUploadText(''); scrollToBottom(); }
   };
   const handleSendBurnMessage = async (e) => {
     e.preventDefault(); if (!user || (!burnText.trim() && !burnFile)) return; setShowBurnModal(false);
@@ -823,7 +747,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const handleDragEnter = (e) => { e.preventDefault(); e.stopPropagation(); dragCounter.current++; if (e.dataTransfer.items && e.dataTransfer.items.length > 0) setIsDragging(true); };
   const handleDragLeave = (e) => { e.preventDefault(); e.stopPropagation(); dragCounter.current--; if (dragCounter.current === 0) setIsDragging(false); };
   const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); };
-  const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); dragCounter.current = 0; if (e.dataTransfer.files && e.dataTransfer.files.length > 0) { processAndSendMedia(e.dataTransfer.files[0]); } };
+  const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); dragCounter.current = 0; if (e.dataTransfer.files && e.dataTransfer.files.length > 0) { const file = e.dataTransfer.files[0]; if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { alert("Only images and videos are allowed."); return; } processAndSendMedia(file); } };
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } }); mediaStreamRef.current = stream;
@@ -850,16 +774,13 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
   const burnTimeOptions = [{ label: '1 Minute', val: 60000 }, { label: '5 Minutes', val: 300000 }, { label: '1 Hour', val: 3600000 }, { label: '24 Hours', val: 86400000 }];
   return (
     <div className="flex-1 flex flex-col relative bg-[#050508] min-h-0 overflow-x-hidden" onClick={() => { setActiveMenu(null); setIsTimeDropdownOpen(false); setShowStickerPicker(false); }} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
-      {/* Universal Video Anchor — always muted to prevent speaker-to-mic feedback loop */}
+      {/* Universal Audio/Video Anchor */}
       <video
         ref={remoteMediaRef}
         autoPlay
         playsInline
-        muted
         className={`absolute top-0 left-0 object-cover transition-opacity duration-300 ${callState === 'connected' && isVideoEnabled ? 'w-full h-full opacity-100 z-[490]' : 'w-1 h-1 opacity-0 pointer-events-none -z-10'}`}
       />
-      {/* Hidden dedicated audio element — NOT muted, plays remote audio without echo */}
-      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
       {/* --- WEBRTC CALLING OVERLAYS --- */}
       {callState === 'prompting' && (
         <div className="absolute inset-0 z-[500] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-fade-in overflow-y-auto">
@@ -877,24 +798,17 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       )}
       {callState === 'calling' && (
         <div className="absolute inset-0 z-[500] bg-[#0a0a0f] flex flex-col items-center justify-center p-6 animate-fade-in">
-          <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-pulse`}>
-            {isVideoEnabled ? <Video className={`w-10 h-10 ${t.text}`} /> : callMode === 'audio_masked' ? <Fingerprint className={`w-10 h-10 ${t.text}`} /> : <PhoneCall className={`w-10 h-10 ${t.text}`} />}
-          </div>
-          <h2 className="text-xl font-bold text-white mb-1">Establishing Uplink...</h2>
-          <p className="text-xs text-slate-500 mb-2">
-            {isVideoEnabled ? (callMode === 'video_blur' ? 'Privacy Blur Video' : callMode === 'video_jam' ? 'Signal Jam Video' : 'Raw Video Feed') : callMode === 'audio_masked' ? 'Masked Audio — voice identity protected' : 'Standard Audio'}
-          </p>
-          <p className="text-[10px] text-slate-600 mb-12">P2P Handshake initiated</p>
+          <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-pulse`}>{isVideoEnabled ? <Video className={`w-10 h-10 ${t.text}`} /> : <PhoneCall className={`w-10 h-10 ${t.text}`} />}</div>
+          <h2 className="text-xl font-bold text-white mb-2">Establishing Uplink...</h2>
+          <p className="text-xs text-slate-500 mb-12">P2P Handshake initiated</p>
           {connectionError && <div className="text-red-400 mb-4 flex items-center gap-2"><AlertCircle className="w-4 h-4" /> {connectionError}</div>}
           <button onClick={endCall} className="w-16 h-16 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-6 h-6 text-white" /></button>
         </div>
       )}
       {callState === 'ringing' && (
         <div className="absolute inset-0 z-[500] bg-[#0a0a0f] flex flex-col items-center justify-center p-6 animate-fade-in">
-          <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-bounce`}>
-            {isVideoEnabled ? <Video className={`w-10 h-10 ${t.text}`} /> : callMode === 'audio_masked' ? <Fingerprint className={`w-10 h-10 ${t.text}`} /> : <Phone className={`w-10 h-10 ${t.text}`} />}
-          </div>
-          <h2 className="text-xl font-bold text-white mb-1">Incoming Secure {isVideoEnabled ? (callMode === 'video_blur' ? 'Privacy Blur' : callMode === 'video_jam' ? 'Signal Jam' : 'Video') : callMode === 'audio_masked' ? 'Masked Audio' : 'Audio'}</h2>
+          <div className={`w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 animate-bounce`}>{isVideoEnabled ? <Video className={`w-10 h-10 ${t.text}`} /> : <Phone className={`w-10 h-10 ${t.text}`} />}</div>
+          <h2 className="text-xl font-bold text-white mb-2">Incoming Secure {isVideoEnabled ? 'Video' : 'Audio'}</h2>
           <p className="text-xs text-slate-500 mb-12">End-to-End Encrypted</p>
           <div className="flex gap-8">
             <button onClick={endCall} className="w-16 h-16 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-transform hover:scale-110"><PhoneOff className="w-6 h-6 text-white" /></button>
@@ -910,13 +824,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
             </div>
           ) : (
             <>
-              <div className={`w-24 h-24 rounded-full bg-black border ${isMuted ? 'border-amber-500/50' : 'border-green-500/50'} flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(34,197,94,0.2)]`}>
-                {callMode === 'audio_masked' ? <Fingerprint className={`w-10 h-10 ${isMuted ? 'text-amber-500' : 'text-green-400'}`} /> : <User className={`w-10 h-10 ${isMuted ? 'text-amber-500' : 'text-green-400'}`} />}
-              </div>
+              <div className={`w-24 h-24 rounded-full bg-black border ${isMuted ? 'border-amber-500/50' : 'border-green-500/50'} flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(34,197,94,0.2)]`}><User className={`w-10 h-10 ${isMuted ? 'text-amber-500' : 'text-green-400'}`} /></div>
               <h2 className="text-xl font-bold text-white mb-1">Link Established</h2>
-              <span className={`text-xs font-mono px-3 py-1 rounded-full mb-4 border ${callMode === 'audio_masked' ? `${t.bgLight} ${t.border} ${t.text}` : 'bg-green-500/10 border-green-500/30 text-green-400'}`}>
-                {callMode === 'audio_masked' ? '🔐 Masked Audio' : '📞 Standard Audio'}
-              </span>
             </>
           )}
           {/* Call Controls Overlay */}
@@ -930,7 +839,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
       )}
       {isDragging && (
         <div className="absolute inset-0 z-[200] bg-black/60 backdrop-blur-sm m-4 rounded-2xl border-2 border-dashed border-cyan-500 flex items-center justify-center pointer-events-none transition-all animate-fade-in">
-          <div className="bg-[#1a1a24] p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 animate-pop-in"><Paperclip className={`w-12 h-12 ${t.text} animate-bounce`} /><h2 className={`text-xl font-bold font-mono tracking-widest ${t.text}`}>DROP TO ENCRYPT & SEND</h2><p className="text-slate-400 text-sm">Images, Videos, PDFs & Documents</p></div>
+          <div className="bg-[#1a1a24] p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 animate-pop-in"><Paperclip className={`w-12 h-12 ${t.text} animate-bounce`} /><h2 className={`text-xl font-bold font-mono tracking-widest ${t.text}`}>DROP TO ENCRYPT & SEND</h2><p className="text-slate-400 text-sm">Supported formats: Images & Videos</p></div>
         </div>
       )}
       {zoomedImage && (<div className="fixed inset-0 z-[300] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md cursor-pointer animate-fade-in" onClick={() => setZoomedImage(null)}><img src={zoomedImage} alt="Zoomed" className="max-w-full max-h-[90vh] rounded-lg shadow-2xl object-contain" onClick={e => e.stopPropagation()} /></div>)}
@@ -1031,8 +940,8 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
         <div className="p-3 sm:p-4 flex gap-2 relative items-center">
           {!isRecording && (
             <div className="flex items-center gap-1 shrink-0">
-              <input type="file" accept="image/*,video/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/zip,application/x-zip-compressed,text/plain,text/csv" className="hidden" ref={fileInputRef} onChange={(e) => { if (e.target.files[0]) { processAndSendMedia(e.target.files[0]); e.target.value = ''; } }} />
-              <button onClick={() => fileInputRef.current?.click()} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`} title="Attach file or document"><Paperclip className="w-5 h-5" /></button>
+              <input type="file" accept="image/*,video/*" className="hidden" ref={fileInputRef} onChange={(e) => { if (e.target.files[0]) { if (!e.target.files[0].type.startsWith('image/') && !e.target.files[0].type.startsWith('video/')) { alert("Only images and videos are allowed."); return; } processAndSendMedia(e.target.files[0]); e.target.value = ''; } }} />
+              <button onClick={() => fileInputRef.current?.click()} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Paperclip className="w-5 h-5" /></button>
               <button onClick={(e) => { e.stopPropagation(); setShowStickerPicker(!showStickerPicker); }} className={`p-2 sm:p-2.5 ${showStickerPicker ? t.text : 'text-slate-400'} hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Sticker className="w-5 h-5" /></button>
               <button onClick={startRecording} className={`p-2 sm:p-2.5 text-slate-400 hover:${t.text} rounded-xl hover:bg-white/5 transition-colors`}><Mic className="w-5 h-5" /></button>
             </div>
