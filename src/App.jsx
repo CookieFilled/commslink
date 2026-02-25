@@ -921,14 +921,14 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           </div>
         </div>
       )}
-      <header className={`${t.isLight ? 'bg-white border-b border-slate-200' : 'glass-header border-b border-white/5'} px-5 py-3.5 flex items-center justify-between z-30 shrink-0 shadow-sm`}>
+      <header className={`${t.isLight ? `${t.bgLight} border-b ${t.border}` : `${t.bgLight} backdrop-blur-md border-b border-white/5`} px-5 py-3.5 flex items-center justify-between z-30 shrink-0 shadow-sm`}>
         <div className="flex items-center gap-3 overflow-hidden">
           <button onClick={goBack} className="md:hidden p-2 -ml-2 text-slate-400 hover:text-white rounded-full hover:bg-white/10"><ChevronLeft className="w-6 h-6" /></button>
           <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${t.bgLight} border ${t.border} flex items-center justify-center ${t.glow} overflow-hidden shrink-0`}>
             {isGroup ? <Users className={`w-5 h-5 ${t.text}`} /> : (chatAvatar ? <img src={chatAvatar} className="w-full h-full object-cover" /> : <User className={`w-5 h-5 ${t.text}`} />)}
           </div>
           <div className="flex flex-col truncate pr-2 group cursor-pointer" onClick={() => { setNewChatName(chatName); setIsEditingName(true); }}>
-            <h2 className="font-mono text-md font-bold text-slate-100 flex items-center gap-2 truncate">{chatName} <PenLine className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" /></h2>
+            <h2 className={`font-mono text-md font-bold ${t.isLight ? t.text : 'text-slate-100'} flex items-center gap-2 truncate`}>{chatName} <PenLine className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" /></h2>
             <p className="text-[10px] text-green-400 flex items-center gap-1">{someoneIsTyping ? (<span className={`${t.text} animate-pulse font-bold`}>{typingName} is typing...</span>) : (<><Lock className="w-3 h-3" /> {isGroup ? `${memberCount} Agents` : 'E2E Encrypted'}</>)}</p>
           </div>
         </div>
@@ -992,7 +992,7 @@ const ChatInterface = ({ user, usersList, threadId, chatData, encryptionKeys, go
           {isUploading && uploadText ? (<div className={`flex-1 flex justify-between bg-black/50 border border-white/10 rounded-xl px-4 py-3 animate-pulse overflow-hidden`}><span className={`font-bold tracking-widest text-xs flex items-center gap-2 ${t.text} truncate`}><Loader2 className="w-4 h-4 animate-spin shrink-0" /> {uploadText}</span></div>) : isRecording ? (
             <div className="flex-1 flex justify-between bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 animate-pulse overflow-hidden"><span className="text-red-400 font-bold tracking-widest text-sm flex items-center gap-2 truncate"><div className="w-2 h-2 rounded-full bg-red-500 shrink-0"></div> REC</span><span className="text-red-400 font-bold">{Math.floor(recordingTime / 60)}:{recordingTime % 60 < 10 ? '0' : ''}{recordingTime % 60}</span></div>
           ) : (
-            <form onSubmit={handleSendText} className="flex-1 relative"><input type="text" value={inputText} onFocus={() => setShowStickerPicker(false)} onChange={handleTypingChange} placeholder={"Secure message..."} className={`w-full ${t.isLight ? 'bg-slate-100 text-slate-800 placeholder-slate-400 border-transparent' : 'glass-input text-white placeholder:text-slate-500'} rounded-xl py-3 px-5 text-[15px] ${t.ring} focus:ring-1 outline-none transition-all font-medium`} /></form>
+            <form onSubmit={handleSendText} className="flex-1 relative"><input type="text" value={inputText} onFocus={() => setShowStickerPicker(false)} onChange={handleTypingChange} placeholder={"Secure message..."} className={`w-full ${t.isLight ? `${t.bgLight} ${t.text} placeholder-${t.text.split('-')[1]}-400 border border-transparent` : `${t.bgLight} text-white placeholder-white/50 border border-transparent`} rounded-xl py-3 px-5 text-[15px] ${t.ring} focus:ring-1 outline-none transition-all font-medium backdrop-blur-sm`} /></form>
           )}
           {isRecording ? (<button onClick={stopRecording} className="bg-red-600 hover:bg-red-500 p-3.5 rounded-xl text-white transition-colors shadow-lg shadow-red-500/20 shrink-0"><Square className="w-5 h-5 fill-current" /></button>) : (<button onClick={handleSendText} disabled={(!inputText.trim() && !isUploading) || isUploading} className={`bg-gradient-to-r ${t.sendBtn} p-3 rounded-xl text-white disabled:opacity-50 transition-all ${t.glow} hover:-translate-y-0.5 hover:shadow-lg active:scale-95 shrink-0`}><Send className="w-5 h-5 ml-0.5" /></button>)}
         </div>
