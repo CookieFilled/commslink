@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>🚀 CommsLink</h1>
+  <h1>CommsLink</h1>
   <p><b>The Ultimate Zero-Knowledge, Impenetrable Messaging Experience.</b></p>
   
   [![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
@@ -9,15 +9,15 @@
 
 <br>
 
-## 🛡️ Why CommsLink?
+##Why CommsLink?
 
 Most "secure" messaging apps still hold the keys to your data. CommsLink flips the script. Built with **React** and **WebRTC**, this is a **zero-data, client-side encrypted** chat application where *you* hold absolute power. No servers storing your messages, no backdoors, and no data harvesting. If you don't have the key, the data simply doesn't exist. It's impenetrable.
 
 ---
 
-## ✨ Features That Make It Stand Out
+##  Features That Make It Stand Out
 
-### 🎨 Amazing Visuals & Multiple Themes
+###  Amazing Visuals & Multiple Themes
 Chatting shouldn't just be secure; it should look incredibly sleek. CommsLink features a modern UI with highly customizable themes so you can chat your way.
 
 <div align="center">
@@ -28,7 +28,7 @@ Chatting shouldn't just be secure; it should look incredibly sleek. CommsLink fe
 
 <br>
 
-### 🔐 Absolute Encryption (You Decide the Key)
+### Absolute Encryption (You Decide the Key)
 Experience Standard Client-Side Encryption that is unbreakable. The software itself has zero knowledge of your decryption key. You set the rules.
 
 <div align="center">
@@ -37,8 +37,8 @@ Experience Standard Client-Side Encryption that is unbreakable. The software its
 
 <br>
 
-### 🎙️ Rich Chat Experience
-Who said military-grade security means a boring chat? Enjoy Stickers, Emojis, Voice Notes, and real-time updates without compromising a single byte of privacy.
+###  Rich Chat Experience
+Enjoy Stickers, Emojis, Voice Notes, and real-time updates without compromising a single byte of privacy.
 
 <div align="center">
   <img width="968" height="279" alt="Rich Chat Features" src="https://github.com/user-attachments/assets/01ddd1b0-f0ce-48f7-aa2f-35139992bd16" />
@@ -46,7 +46,7 @@ Who said military-grade security means a boring chat? Enjoy Stickers, Emojis, Vo
 
 <br>
 
-### 📞 Encrypted Calling using WebRTC
+###  Encrypted Calling using WebRTC
 Crystal clear, peer-to-peer, fully encrypted video and audio calls. Your data travels straight from you to your friend—bypassing the middleman entirely.
 
 <div align="center">
@@ -55,7 +55,7 @@ Crystal clear, peer-to-peer, fully encrypted video and audio calls. Your data tr
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 * **Frontend:** React
 * **Real-time Communication:** WebRTC
@@ -63,9 +63,9 @@ Crystal clear, peer-to-peer, fully encrypted video and audio calls. Your data tr
 
 ---
 
-## 🚀 Getting Started
+##  Getting Started
 
-Want to run the most secure chat app on your local machine? Let's go.
+To Run This code on Local Machine:
 
 **1. Clone the repository:**
 ```bash
@@ -92,6 +92,7 @@ REACT_APP_TURN_SERVER_URL=turn:your-turn-server.com:3478
 REACT_APP_TURN_SERVER_USER=your_username
 REACT_APP_TURN_SERVER_CREDENTIAL=your_password
 ```
+#You can use Firebase as your Signaling Server, or something else that you think might work
 
 **5. Fire it up:**
 ```bash
